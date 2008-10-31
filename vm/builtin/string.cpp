@@ -64,22 +64,11 @@ namespace rubinius {
    * +bytes+ is the number of 'real' characters in the string
    */
   String* String::create(STATE, const char* str, size_t bytes) {
-    String *so;
-
     if(bytes == 0 && str) bytes = strlen(str);
 
-    so = (String*)state->om->new_object(G(string), String::fields);
+    String *so = String::create(state, Fixnum::from(bytes));
 
-    so->num_bytes(state, Fixnum::from(bytes));
-    so->characters(state, so->num_bytes());
-    so->encoding(state, Qnil);
-    so->hash_value(state, (Integer*)Qnil);
-
-    ByteArray* ba = ByteArray::create(state, bytes + 1);
-    if(str) std::memcpy(ba->bytes, str, bytes);
-    ba->bytes[bytes] = 0;
-
-    so->data(state, ba);
+    if(str) std::memcpy(so->data_->bytes, str, bytes);
 
     return so;
   }
@@ -138,7 +127,7 @@ namespace rubinius {
     return (char*)data_->bytes;
   }
 
-  char* String::c_str() {
+  const char* String::c_str() {
     sassert(size() < data_->size());
 
     char* c_string = (char*)data_->bytes;
@@ -183,55 +172,42 @@ namespace rubinius {
     shared(state, Qfalse);
   }
 
-  /* This is not the same as String::append below that
-   * takes a const char* other. In C/C++, strings are
-   * terminated with NULL. That's not true in Ruby, where
-   * strings may contain embedded NULL characters. We must
-   * use the size of the string in Ruby to know the limits.
-   */
   String* String::append(STATE, String* other) {
-    // No need to call unshare and duplicate a ByteArray
-    // just to throw it away.
-    if(shared_) shared(state, Qfalse);
-
-    size_t new_size = size() + other->size();
-
-    ByteArray *ba = ByteArray::create(state, new_size + 1);
-    std::memcpy(ba->bytes, data_->bytes, size());
-    std::memcpy(ba->bytes + size(), other->data()->bytes, other->size());
-
-    ba->bytes[new_size] = 0;
-
-    num_bytes(state, Integer::from(state, new_size));
-    data(state, ba);
-    hash_value(state, (Integer*)Qnil);
-
-    return this;
+    return append(state, other->byte_address(), other->size());
   }
 
-  /* Since we're passed a C/C++ string, which is NULL
-   * terminated, we use strlen to determine the size of
-   * +other+. This is NOT the same as String::append
-   * above that takes a Ruby String*.
-   */
   String* String::append(STATE, const char* other) {
-    if(shared_) unshare(state);
+    return append(state, other, std::strlen(other));
+  }
 
-    size_t len = strlen(other);
-    size_t new_size = size() + len;
+  String* String::append(STATE, const char* other, std::size_t length) {
+    size_t new_size = size() + length;
+    size_t capacity = data_->size();
+    
+    if(capacity <= (new_size + 1)) {      
+      // capacity needs one extra byte of room for the trailing null
+      while(capacity < (new_size + 1)) {
+        capacity = (capacity + 1) * 2;
+      }
 
-    // Leave one extra byte of room for the trailing null
-    ByteArray *d2 = ByteArray::create(state, new_size + 1);
-    std::memcpy(d2->bytes, data_->bytes, size());
+      // No need to call unshare and duplicate a ByteArray
+      // just to throw it away.
+      if(shared_) shared(state, Qfalse);
+
+      ByteArray *ba = ByteArray::create(state, capacity);
+      std::memcpy(ba->bytes, data_->bytes, size());
+      data(state, ba);
+    } else {
+      if(shared_) unshare(state);
+    }
 
     // Append on top of the null byte at the end of s1, not after it
-    std::memcpy(d2->bytes + size(), other, len);
+    std::memcpy(data_->bytes + size(), other, length);
 
     // The 0-based index of the last character is new_size - 1
-    d2->bytes[new_size] = 0;
+    data_->bytes[new_size] = 0;
 
     num_bytes(state, Integer::from(state, new_size));
-    data(state, d2);
     hash_value(state, (Integer*)Qnil);
 
     return this;
@@ -465,7 +441,7 @@ namespace rubinius {
   }
 
   Integer* String::to_i(STATE, Fixnum* fix_base, Object* strict) {
-    char* str = c_str();
+    const char* str = c_str();
     int base = fix_base->to_native();
     bool negative = false;
     Integer* value = Fixnum::from(0);
@@ -494,7 +470,7 @@ namespace rubinius {
 
     char chr;
     int detected_base = 0;
-    char* str_start = str;
+    const char* str_start = str;
 
     // Try and detect a base prefix on the front. We have to do this
     // even though we might have been told the base, because we have

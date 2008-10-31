@@ -187,7 +187,11 @@ namespace rubinius {
 #endif
 
 #ifdef HAVE_STRUCT_TM_TM_ZONE
-    tm.tm_zone = as<String>(ary->get(state, 10))->c_str();
+    /** @todo There are platform diffs here. The string should be copied
+     *        if (and only if) struct tm does not have a const tm_zone,
+     *        but for now, just reference the original. It *should* be
+     *        safe. --rue */
+    tm.tm_zone = const_cast<char*>(as<String>(ary->get(state, 10))->c_str());
 #endif
 
     size_t chars = ::strftime(str, MAX_STRFTIME_OUTPUT,

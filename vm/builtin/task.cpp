@@ -468,23 +468,23 @@ namespace rubinius {
     return open_module(under, name);
   }
 
+
   Module* Task::open_module(Module* under, Symbol* name) {
-    Module* mod;
+    Module* module;
     bool found;
 
     Object* obj = const_get(under, name, &found);
-    if(found) return as<Module>(obj);
 
-    mod = Module::create(state);
-    if(under == G(object)) {
-      mod->name(state, name);
-    } else {
-      mod->set_name(state, under, name);
+    if(found) {
+      return as<Module>(obj);
     }
 
-    under->set_const(state, name, mod);
+    module = Module::create(state);
 
-    return mod;
+    module->set_name(state, under, name);
+    under->set_const(state, name, module);
+
+    return module;
   }
 
   /* Used only in debugging and testing. Direct access to the stack
@@ -538,7 +538,7 @@ namespace rubinius {
     profiler = new profiler::Profiler();
   }
 
-  void Task::disable_profiler(char* results) {
+  void Task::disable_profiler(const char* results) {
     if(profiler) {
       std::ofstream stream(results);
       profiler->print_results(state, stream);
@@ -561,9 +561,9 @@ namespace rubinius {
         }
 
       }
-    } catch(RubyException &exc) {
+    } catch(const RubyException& exc) {
       raise_exception(exc.exception);
-    } catch(TypeError &exc) {
+    } catch(const TypeError& exc) {
       Exception* e = Exception::make_type_error(state, exc.type, exc.object, exc.reason);
       raise_exception(e);
     }
