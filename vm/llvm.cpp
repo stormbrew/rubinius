@@ -114,8 +114,8 @@ namespace rubinius {
 
   }
 
-  static CallInst* call_function(std::string name, Value* task, 
-                                 Value* js, BasicBlock* block) {
+  static CallInst* call_function(std::string name, Value* task,
+                                 Value* ctx, Value* vmm, BasicBlock* block) {
     Function* func = operations->getFunction(name);
     if(!func) {
       std::string str = std::string("Unable to find: ");
@@ -125,8 +125,38 @@ namespace rubinius {
     }
 
     std::vector<Value*> args(0);
+    args.push_back(vmm);
     args.push_back(task);
-    args.push_back(js);
+    args.push_back(ctx);
+
+    return CallInst::Create(func, args.begin(), args.end(), "", block);
+  }
+
+  CallInst* VMLLVMMethod::call_operation(int index, int width, Value* task,
+                                         Value* ctx, Value* vmm, BasicBlock* block) {
+    const char* name = InstructionSequence::get_instruction_name(opcodes[index]);
+    Function* func = operations->getFunction(std::string(name));
+    if(!func) {
+      std::string str = std::string("Unable to find: ");
+      str += name;
+
+      throw std::runtime_error(str);
+    }
+
+    std::vector<Value*> args(0);
+    args.push_back(vmm);
+    args.push_back(task);
+    args.push_back(ctx);
+
+    switch(width - 1) {
+    case 2:
+      args.push_back(ConstantInt::get(Type::Int32Ty, opcodes[index + 1]));
+      args.push_back(ConstantInt::get(Type::Int32Ty, opcodes[index + 2]));
+      break;
+    case 1:
+      args.push_back(ConstantInt::get(Type::Int32Ty, opcodes[index + 1]));
+      break;
+    }
 
     return CallInst::Create(func, args.begin(), args.end(), "", block);
   }
@@ -241,6 +271,7 @@ namespace rubinius {
   }
 #endif
 
+#if 0
   static Function* create_function(const char* name) {
     std::stringstream stream;
     stream << "_XJIT_" << strlen(name) << name << "_" << operations->size();
@@ -285,8 +316,250 @@ namespace rubinius {
 
     return blocks;
   }
+#endif
+  static bool is_terminator(opcode op) {
+    switch(op) {
+    case InstructionSequence::insn_send_method:
+    case InstructionSequence::insn_send_stack:
+    case InstructionSequence::insn_send_stack_with_block:
+    case InstructionSequence::insn_send_stack_with_splat:
+    case InstructionSequence::insn_send_super_stack_with_splat:
+    case InstructionSequence::insn_send_super_stack_with_block:
+    case InstructionSequence::insn_meta_send_op_plus:
+    case InstructionSequence::insn_meta_send_op_minus:
+    case InstructionSequence::insn_meta_send_op_equal:
+    case InstructionSequence::insn_meta_send_op_lt:
+    case InstructionSequence::insn_meta_send_op_gt:
+    case InstructionSequence::insn_meta_send_op_tequal:
+    case InstructionSequence::insn_meta_send_op_nequal:
+    case InstructionSequence::insn_meta_send_call:
+      return true;
+    }
+
+    return false;
+  }
+
+  static bool is_send(opcode op) {
+    switch(op) {
+    case InstructionSequence::insn_send_method:
+    case InstructionSequence::insn_send_stack:
+    case InstructionSequence::insn_send_stack_with_block:
+    case InstructionSequence::insn_send_stack_with_splat:
+    case InstructionSequence::insn_send_super_stack_with_splat:
+    case InstructionSequence::insn_send_super_stack_with_block:
+    case InstructionSequence::insn_meta_send_op_plus:
+    case InstructionSequence::insn_meta_send_op_minus:
+    case InstructionSequence::insn_meta_send_op_equal:
+    case InstructionSequence::insn_meta_send_op_lt:
+    case InstructionSequence::insn_meta_send_op_gt:
+    case InstructionSequence::insn_meta_send_op_tequal:
+    case InstructionSequence::insn_meta_send_op_nequal:
+    case InstructionSequence::insn_meta_send_call:
+      return true;
+    }
+
+    return false;
+  }
+
+  static BasicBlock* create_block(BasicBlock** blocks, int index, Function* func) {
+    if(blocks[index]) {
+      return blocks[index];
+    }
+    std::stringstream stream;
+    stream << "insn" << index;
+    BasicBlock* block = BasicBlock::Create(stream.str().c_str(), func);
+    blocks[index] = block;
+    return block;
+  }
 
   void VMLLVMMethod::compile(STATE) {
+    std::stringstream stream;
+    Symbol* sym = original->name();
+    const char* name;
+    if(sym->nil_p()) {
+      name = "NONAME";
+    } else {
+      name = original->name()->c_str(state);
+    }
+    stream << "_XJIT_" << strlen(name) << name << "_" << operations->size();
+
+    const Type* vmm_type  = operations->getTypeByName("struct.rubinius::VMMethod");
+    const Type* task_type = operations->getTypeByName("struct.rubinius::Task");
+    const Type* ctx_type  = operations->getTypeByName("struct.rubinius::MethodContext");
+
+    Function* func = cast<Function>(
+        operations->getOrInsertFunction(stream.str(), Type::VoidTy,
+          PointerType::getUnqual(vmm_type),
+          PointerType::getUnqual(task_type),
+          PointerType::getUnqual(ctx_type),
+          PointerType::getUnqual(Type::Int32Ty),
+          (void *)NULL));
+
+    Function::arg_iterator args = func->arg_begin();
+    Value* vmm = args++;
+    vmm->setName("vmm");
+
+    Value* task = args++;
+    task->setName("task");
+
+    Value* ctx = args++;
+    ctx->setName("ctx");
+
+    Value* pos = args++;
+    pos->setName("pos");
+
+    BasicBlock* top = BasicBlock::Create("top", func);
+
+    /* We collect up all the calls to the operation functions so we can
+     * inline them later. */
+    std::vector<CallInst*> calls(0);
+
+    BasicBlock** blocks = new BasicBlock*[total];
+    for(size_t i = 0; i < total; i++) {
+      blocks[i] = NULL;
+    }
+
+    for(size_t idx = 0; idx < total;) {
+      size_t width = InstructionSequence::instruction_width(opcodes[idx]);
+
+      // The current block
+      BasicBlock* block = create_block(blocks, idx, func);
+
+      // Where we go next
+      BasicBlock* next;
+      if(idx + width >= total) {
+        next = NULL;
+      } else {
+        next = create_block(blocks, idx + width, func);
+      }
+
+      CallInst* call = NULL;
+
+      // Set our virtual ip to point to beyond the current instruction
+      new StoreInst(ConstantInt::get(Type::Int32Ty, idx + width), pos, block);
+
+      switch(opcodes[idx]) {
+      case InstructionSequence::insn_goto:
+        BasicBlock* dest = create_block(blocks, opcodes[idx + 1], func);
+        BranchInst::Create(dest, block);
+        break;
+      case InstructionSequence::insn_goto_if_true:
+      case InstructionSequence::insn_goto_if_false:
+      case InstructionSequence::insn_goto_if_defined: {
+        BasicBlock* dest = create_block(blocks, opcodes[idx + 1], func);
+
+        std::string func_name;
+        switch(opcodes[idx]) {
+        case InstructionSequence::insn_goto_if_true:
+          func_name = std::string("jit_goto_if_true");
+          break;
+        case InstructionSequence::insn_goto_if_false:
+          func_name = std::string("jit_goto_if_false");
+          break;
+        case InstructionSequence::insn_goto_if_defined:
+          func_name = std::string("jit_goto_if_defined");
+          break;
+        }
+
+        call = call_function(func_name, task, ctx, vmm, block);
+        call->setName("goto");
+        ICmpInst* cmp = new ICmpInst(ICmpInst::ICMP_EQ, call,
+            ConstantInt::get(Type::Int8Ty, cExecuteRestart), "cmp", block);
+
+        BranchInst::Create(dest, next, cmp, block);
+        break;
+      }
+      case InstructionSequence::insn_halt:
+        new StoreInst(ConstantInt::get(Type::Int32Ty, (uint64_t)-1), pos, block);
+        ReturnInst::Create(block);
+        break;
+      default:
+        call = call_operation(idx, width, task, ctx, vmm, block);
+        if(is_send(opcodes[idx])) {
+          // Set up a comparison for the upcoming return value from the send
+          ICmpInst* cmp = new ICmpInst(ICmpInst::ICMP_EQ, call,
+              ConstantInt::get(Type::Int8Ty, cExecuteRestart), "cmp", block);
+          // If the send returns true, then we will reset the execution state.
+          // Specifically, it will cause VMMethod::resume to return
+          BasicBlock* send = BasicBlock::Create("send", func);
+
+          // Perform the comparison and go to next or send as above
+          // 'block' is where the branch instruction is stored
+          BranchInst::Create(send, next, cmp, block);
+
+          // Add 'store' and 'return' instructions to the 'send' basic block
+          new StoreInst(ConstantInt::get(Type::Int32Ty, idx + width), pos, send);
+          ReturnInst::Create(send);
+
+          // Make this flow look sane in the LLVM debugging output
+          send->moveAfter(block);
+        } else if(is_terminator(opcodes[idx])) {
+          /* Setup where to return to when we're re-entered. */
+          new StoreInst(ConstantInt::get(Type::Int32Ty, idx + width), pos, block);
+          ReturnInst::Create(block);
+        } else if(opcodes[idx] == InstructionSequence::insn_ret ) {
+          /* -2 signals that we're done for reals now. */
+          new StoreInst(ConstantInt::get(Type::Int32Ty, (uint64_t)-2), pos, block);
+          ReturnInst::Create(block);
+        } else {
+          BranchInst::Create(next, block);
+        }
+      }
+
+      if(call) calls.push_back(call);
+      idx += width;
+    }
+
+    // Create the switch at the top
+    /*   if we have to bail, set next_pos to -1, so the caller knows. */
+    BasicBlock* def = BasicBlock::Create("error", func);
+    new StoreInst(ConstantInt::get(Type::Int32Ty, (uint64_t)-1), pos, def);
+    ReturnInst::Create(def);
+
+    size_t use_blocks = 0;
+    for(size_t i = 0; i < total; i++) {
+      if(blocks[i]) use_blocks++;
+    }
+
+    /*   load in the current value of next_pos, and branch to it. */
+    Value* current_pos = new LoadInst(pos, "get_pos", top);
+    SwitchInst* sw = SwitchInst::Create(current_pos, def, use_blocks, top);
+
+    for(size_t i = 0; i < total; i++) {
+      if(blocks[i]) sw->addCase(ConstantInt::get(Type::Int32Ty, i), blocks[i]);
+    }
+
+    delete[] blocks;
+
+    /* Now, manually inline all those calls to operation functions. */
+    for(std::vector<CallInst*>::iterator i = calls.begin(); i != calls.end(); i++) {
+      CallInst* ci = *i;
+      llvm::InlineFunction(ci);
+    }
+
+    FunctionPassManager fpm(new ExistingModuleProvider(func->getParent()));
+
+    fpm.add(new TargetData(func->getParent()));
+    fpm.add(createInstructionCombiningPass());
+    fpm.add(createPromoteMemoryToRegisterPass());
+    fpm.add(createConstantPropagationPass());
+    fpm.add(createScalarReplAggregatesPass());
+    fpm.add(createAggressiveDCEPass());
+    fpm.add(createVerifierPass());
+    fpm.add(createCFGSimplificationPass());
+    fpm.add(createDeadStoreEliminationPass());
+    fpm.add(createInstructionCombiningPass());
+    fpm.run(*func);
+
+    // std::cout << "Function: " << name << "\n";
+    // std::cout << *func << "\n";
+
+    function = func;
+    c_func = (CompiledFunction)engine->getPointerToFunction(func);
+  }
+
+#if 0
+  void VMLLVMMethod::old_compile(STATE) {
     const char* name = original->name()->c_str(state);
     Function* func = create_function(name);
 
@@ -447,6 +720,7 @@ namespace rubinius {
 
     c_func = (CompiledFunction)engine->getPointerToFunction(func);
   }
+#endif
 
   ExecuteStatus VMLLVMMethod::uncompiled_execute(STATE,
                                         Task* task, Message& msg) {
@@ -460,7 +734,10 @@ namespace rubinius {
   }
 
   void VMLLVMMethod::resume(Task* task, MethodContext* ctx) {
-    c_func(task, &ctx->js, &ctx->ip);
+    // std::cout << "Enter: " << (void*)ctx << "\n";
+    c_func(this, task, ctx, &ctx->ip);
+    // std::cout << "Exit:  " << (void*)task->active();
+    // std::cout << " ip = " << ctx->ip << "\n";
     if(ctx->ip == -1) {
       throw Task::Halt("Task halted");
     }

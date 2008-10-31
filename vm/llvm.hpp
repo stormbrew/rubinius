@@ -7,9 +7,12 @@
 #include <llvm/Module.h>
 #include <llvm/Instructions.h>
 
-struct jit_state;
 namespace rubinius {
-  typedef void (*CompiledFunction)(Task*, struct jit_state* const, int*);
+  class VMLLVMMethod;
+  class MethodContext;
+  class Task;
+
+  typedef void (*CompiledFunction)(VMLLVMMethod*, Task*, MethodContext* const, int*);
 
   class VMLLVMMethod : public VMMethod {
   public:
@@ -21,6 +24,8 @@ namespace rubinius {
     static void init(const char* path);
     llvm::CallInst* call_operation(Opcode* op, llvm::Value* state,
         llvm::Value*task, llvm::BasicBlock* block);
+    llvm::CallInst* call_operation(int index, int width, llvm::Value* task,
+        llvm::Value* ctx, llvm::Value* vmm, llvm::BasicBlock* block);
     virtual void compile(STATE);
     virtual void resume(Task* task, MethodContext* ctx);
 

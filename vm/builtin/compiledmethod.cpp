@@ -112,7 +112,7 @@ namespace rubinius {
   }
 
   void CompiledMethod::post_marshal(STATE) {
-    formalize(state); // side-effect, populates backend_method_
+    formalize(state, true); // side-effect, populates backend_method_
   }
 
   size_t CompiledMethod::number_of_locals() {

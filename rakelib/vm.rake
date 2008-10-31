@@ -14,7 +14,11 @@ else
   LLVM_STYLE = "Release"
 end
 
-LLVM_ENABLE = false
+LLVM_ENABLE = ENV['LLVM_ENABLE']
+
+if LLVM_ENABLE
+  puts "[Compiling with LLVM]"
+end
 
 
 ENV.delete 'CDPATH' # confuses llvm_config
@@ -133,7 +137,7 @@ INCLUDES      = EX_INC + %w[/usr/local/include vm/test/cxxtest vm .]
 INCLUDES.map! { |f| "-I#{f}" }
 
 # Default build options
-FLAGS         = %w[ -pipe -Wall -Wno-deprecated ]
+FLAGS         = %w[ -pipe -Wall -Wno-deprecated -ggdb3 -O2 -Werror ]
 if RUBY_PLATFORM =~ /darwin/i && `sw_vers` =~ /10\.4/
   FLAGS.concat %w(-DHAVE_STRLCAT -DHAVE_STRLCPY)
 end
@@ -153,9 +157,11 @@ CC          = ENV['CC'] || "gcc"
 def compile_c(obj, src)
   flags = INCLUDES + FLAGS
 
-  if LLVM_ENABLE and !defined? $llvm_c then
-    $llvm_c = `#{LLVM_CONFIG} --cflags`.split(/\s+/)
-    $llvm_c.delete_if { |e| e.index("-O") == 0 }
+  if LLVM_ENABLE
+    unless defined? $llvm_c
+      $llvm_c = `#{LLVM_CONFIG} --cflags`.split(/\s+/)
+      $llvm_c.delete_if { |e| e.index("-O") == 0 }
+    end
     flags.concat $llvm_c
   end
 
@@ -233,7 +239,7 @@ namespace :build do
 
   # Issue the actual build commands. NEVER USE DIRECTLY.
   task :build => BUILD_PRETASKS +
-                 %w[ vm
+                 %w[ vm/vm
                      kernel:build
                      lib/rbconfig.rb
                      build:ffi:preprocessor
@@ -243,7 +249,6 @@ namespace :build do
   # Flag setup
 
   task :normal_flags do
-    FLAGS.concat %w[ -ggdb3 -O2 -Werror ]
   end
 
   task :inline_flags => :normal_flags do
@@ -435,7 +440,7 @@ rubypp_task 'vm/instructions.o', 'vm/llvm/instructions.cpp', 'vm/instructions.rb
 end
 
 rubypp_task 'vm/instructions.bc', 'vm/llvm/instructions.cpp', *hdrs do |path|
-  sh "llvm-g++ -emit-llvm -Ivm -Ivm/external_libs/libffi/include -c -o vm/instructions.bc #{path}"
+  sh "llvm-g++ -emit-llvm -I. -Ivm -Ivm/external_libs/libtommath -Ivm/external_libs/libffi/include -c -o vm/instructions.bc #{path}"
 end
 
 namespace :vm do
@@ -450,9 +455,11 @@ namespace :vm do
 
   task :coverage do
     Dir.mkdir "vm/test/coverage" unless File.directory? "vm/test/coverage"
-    if LLVM_ENABLE and !defined? $llvm_c then
-      $llvm_c = `#{LLVM_CONFIG} --cflags`.split(/\s+/)
-      $llvm_c.delete_if { |e| e.index("-O") == 0 }
+    if LLVM_ENABLE
+      unless defined? $llvm_c
+        $llvm_c = `#{LLVM_CONFIG} --cflags`.split(/\s+/)
+        $llvm_c.delete_if { |e| e.index("-O") == 0 }
+      end
     end
 
     if LLVM_ENABLE
