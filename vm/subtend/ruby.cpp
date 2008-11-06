@@ -8,6 +8,7 @@
 #include "builtin/array.hpp"
 #include "builtin/bignum.hpp"
 #include "builtin/bytearray.hpp"
+#include "builtin/data.hpp"
 #include "builtin/exception.hpp"
 #include "builtin/fixnum.hpp"
 #include "builtin/integer.hpp"
@@ -37,6 +38,7 @@ using rubinius::Bignum;
 using rubinius::ByteArray;
 using rubinius::Class;
 using rubinius::ClassType;
+using rubinius::Data;
 using rubinius::Fixnum;
 using rubinius::Integer;
 using rubinius::Message;
@@ -323,6 +325,22 @@ extern "C" {
     NativeMethodContext* context = NativeMethodContext::current();
 
     return RBX_NIL_P(context->object_from(expression_result));
+  }
+
+  long rbx_subtend_hidden_rstring_len(VALUE string_handle) {
+    NativeMethodContext* context = NativeMethodContext::current();
+
+    String* string = as<String>(context->object_from(string_handle));
+
+    return string->size();
+  }
+
+  char* rbx_subtend_hidden_rstring_ptr(VALUE string_handle) {
+    NativeMethodContext* context = NativeMethodContext::current();
+
+    String* string = as<String>(context->object_from(string_handle));
+
+    return string->byte_address();
   }
 
   int rbx_subtend_hidden_rtest(VALUE expression_result) {
@@ -753,6 +771,19 @@ extern "C" {
                       value);
   }
 
+  VALUE rb_data_object_alloc(VALUE klass, RUBY_DATA_FUNC mark,
+                             RUBY_DATA_FUNC free, void* ptr) {
+    NativeMethodContext* context = NativeMethodContext::current();
+
+    Class* data_klass = as<Class>(context->object_from(klass));
+
+    Data* data = Data::create(context->state(), ptr, mark, free);
+
+    data->klass(context->state(), data_klass);
+
+    return context->handle_for(data);
+  }
+
   void rb_define_alias(VALUE module_handle, const char* new_name, const char* old_name) {
     ID id_new = rb_intern(new_name);
     ID id_old = rb_intern(old_name);
@@ -827,6 +858,20 @@ extern "C" {
     if(global_handle < 0) {
       NativeMethodContext* context = NativeMethodContext::current();
       context->delete_global(global_handle);
+    }
+  }
+
+  void rb_gc_mark(VALUE ptr) {
+    NativeMethodContext* context = NativeMethodContext::current();
+
+    Object* object = context->object_from(ptr);
+
+    if(object->reference_p()) {
+      Object* res = VM::current_state()->current_mark.call(object);
+
+      if(res) {
+        context->handles()[ptr] = res;
+      }
     }
   }
 
@@ -1303,6 +1348,10 @@ extern "C" {
     VALUE block_handle = context->handle_for(context->block());
 
     return rb_funcall(block_handle, rb_intern("call"), 1, argument_handle);
+  }
+
+  void ruby_xfree(void* x) {
+    if(x) free(x);
   }
 
 }

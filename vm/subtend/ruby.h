@@ -48,6 +48,11 @@
  */
 #define ID    intptr_t
 
+/**
+ * In MRI, RUBY_DATA_FUNC is used for the mark and free functions in
+ * Data_Wrap_Struct and Data_Make_Struct.
+ */
+typedef void (*RUBY_DATA_FUNC)(void*);
 
 /* "Stash" the real versions. */
 #define RBX_Qfalse      (reinterpret_cast<Object*>(6UL))
@@ -320,6 +325,12 @@ extern "C" {
 /** Whether object is nil. */
 #define NIL_P(v)          rbx_subtend_hidden_nil_p((v))
 
+/** The length of string str. */
+#define RSTRING_LEN(str)  rbx_subtend_hidden_rstring_len((str))
+
+/** The pointer to the string str's data. */
+#define RSTRING_PTR(str)  rbx_subtend_hidden_rstring_ptr((str))
+
 /** False if expression evaluates to nil or false, true otherwise. */
 #define RTEST(v)          rbx_subtend_hidden_rtest((v))
 
@@ -391,11 +402,17 @@ extern "C" {
   /** Symbol Handle for an ID. @internal. */
   VALUE   rbx_subtend_hidden_id2sym(ID id);
 
-  /** Infect obj2 if obj1 is tainted. */
+  /** Infect obj2 if obj1 is tainted. @internal.*/
   void    rbx_subtend_hidden_infect(VALUE obj1, VALUE obj2);
 
   /** False if expression evaluates to nil, true otherwise. @internal. */
   int     rbx_subtend_hidden_nil_p(VALUE expression_result);
+
+  /** Length of string string_handle. @internal. */
+  long    rbx_subtend_hidden_rstring_len(VALUE string_handle);
+
+  /** Pointer to string data in string_handle. @internal. */
+  char*   rbx_subtend_hidden_rstring_ptr(VALUE string_handle);
 
   /** False if expression evaluates to Qnil or Qfalse, true otherwise. @internal. */
   int     rbx_subtend_hidden_rtest(VALUE expression_result);
@@ -425,9 +442,17 @@ extern "C" {
   /** Convert unsigned int into a Numeric. */
   VALUE   UINT2NUM(unsigned int number);
 
-char *StringValuePtr(VALUE str);
+  char*   StringValuePtr(VALUE str);
 
+#define   Data_Make_Struct(klass, type, mark, free, sval) (\
+            sval = ALLOC(type), \
+            memset(sval, NULL, sizeof(type)), \
+            Data_Wrap_Struct(klass, mark, free, sval)\
+          )
 
+#define   Data_Wrap_Struct(klass, mark, free, sval) \
+            rb_data_object_alloc(klass, (void*)sval, (RUBY_DATA_FUNC)mark, \
+                                 (RUBY_DATA_FUNC)free)
 
   /** Return obj if it is an Array, or return wrapped (i.e. [obj]) */
   VALUE   rb_Array(VALUE obj_handle);
@@ -535,6 +560,8 @@ char *StringValuePtr(VALUE str);
   /** Set module's named class variable to given value. Returns the value. @@ is optional. */
   VALUE   rb_cvar_set(VALUE module_handle, ID name, VALUE value);
 
+  VALUE   rb_data_object_alloc(VALUE klass, RUBY_DATA_FUNC mark,
+                               RUBY_DATA_FUNC free, void* sval);
   /** Alias method by old name as new name. Methods are independent of eachother. */
   void    rb_define_alias(VALUE module_handle, const char *new_name, const char *old_name);
 
@@ -615,6 +642,9 @@ char *StringValuePtr(VALUE str);
           rbx_subtend_hidden_rb_funcall2(__FILE__, __LINE__, \
                                          (receiver), (method_name), \
                                          (arg_count), (args) )
+
+  /** Mark ruby object ptr. */
+  void    rb_gc_mark(VALUE ptr);
 
   /** Mark variable global. Will not be GC'd. */
   void    rb_global_variable(VALUE* handle_address);
@@ -843,6 +873,9 @@ char *StringValuePtr(VALUE str);
 
   /** Call block with given argument or raise error if no block given. */
   VALUE   rb_yield(VALUE argument_handle);
+
+  /** Frees x */
+  void    ruby_xfree(void* x);
 
 
 #ifdef __cplusplus
