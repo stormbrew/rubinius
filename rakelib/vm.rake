@@ -397,7 +397,13 @@ end
 files TYPE_GEN, field_extract_headers + %w[vm/codegen/field_extract.rb] + [:run_field_extract] do
 end
 
+file 'vm/drivers/llvm.o' => 'vm/drivers/llvm.cpp'
+
 file 'vm/vm' => EXTERNALS + objs + vm_objs do |t|
+  ld t
+end
+
+file 'vm/llvm-compile' => EXTERNALS + objs + ['vm/drivers/llvm.o'] do |t|
   ld t
 end
 
@@ -441,7 +447,7 @@ rubypp_task 'vm/instructions.o', 'vm/llvm/instructions.cpp', 'vm/instructions.rb
 end
 
 rubypp_task 'vm/instructions.bc', 'vm/llvm/instructions.cpp', *hdrs do |path|
-  sh "llvm-g++ -emit-llvm -I. -Ivm -Ivm/external_libs/libtommath -Ivm/external_libs/libffi/include -c -o vm/instructions.bc #{path}"
+  sh "llvm-g++ -emit-llvm -O2 -I. -Ivm -Ivm/external_libs/libtommath -Ivm/external_libs/libffi/include -c -o vm/instructions.bc #{path}"
 end
 
 namespace :vm do

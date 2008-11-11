@@ -1,4 +1,5 @@
 #ifndef RBX_LLVM_HPP
+#define RBX_LLVM_HPP
 #ifdef ENABLE_LLVM
 
 #include "vmmethod.hpp"
@@ -28,6 +29,7 @@ namespace rubinius {
         llvm::Value* ctx, llvm::Value* vmm, llvm::BasicBlock* block);
     virtual void compile(STATE);
     virtual void resume(Task* task, MethodContext* ctx);
+    llvm::Function* VMLLVMMethod::compile_into_function(const char* name);
 
     static ExecuteStatus uncompiled_execute(STATE, Task* task, Message& msg);
   };

@@ -383,12 +383,17 @@ namespace rubinius {
     }
     stream << "_XJIT_" << strlen(name) << name << "_" << operations->size();
 
+    function = compile_into_function(stream.str().c_str());
+    c_func = (CompiledFunction)engine->getPointerToFunction(function);
+  }
+
+  llvm::Function* VMLLVMMethod::compile_into_function(const char* name) {
     const Type* vmm_type  = operations->getTypeByName("struct.rubinius::VMMethod");
     const Type* task_type = operations->getTypeByName("struct.rubinius::Task");
     const Type* ctx_type  = operations->getTypeByName("struct.rubinius::MethodContext");
 
     Function* func = cast<Function>(
-        operations->getOrInsertFunction(stream.str(), Type::VoidTy,
+        operations->getOrInsertFunction(name, Type::VoidTy,
           PointerType::getUnqual(vmm_type),
           PointerType::getUnqual(task_type),
           PointerType::getUnqual(ctx_type),
@@ -554,8 +559,7 @@ namespace rubinius {
     // std::cout << "Function: " << name << "\n";
     // std::cout << *func << "\n";
 
-    function = func;
-    c_func = (CompiledFunction)engine->getPointerToFunction(func);
+    return func;
   }
 
 #if 0
