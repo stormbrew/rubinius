@@ -124,9 +124,6 @@ class Hash
     x.to_hash
   end
 
-  alias_method :key, :index
-
-
   def ==(other)
     return true if self.equal? other
     unless other.kind_of? Hash
