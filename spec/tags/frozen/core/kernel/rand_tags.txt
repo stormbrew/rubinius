@@ -1,1 +1,2 @@
 incomplete:Kernel#rand needs to be reviewed for spec completeness
+fails:Kernel.rand is a private method

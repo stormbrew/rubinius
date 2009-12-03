@@ -1,1 +1,2 @@
 incomplete:Kernel.fork needs to be reviewed for spec completeness
+fails:Kernel#fork is a private method

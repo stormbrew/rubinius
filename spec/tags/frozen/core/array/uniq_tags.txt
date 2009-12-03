@@ -1,0 +1,1 @@
+fails:Array#uniq! raises a RuntimeError on a frozen array

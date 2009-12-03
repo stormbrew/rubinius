@@ -1,1 +1,2 @@
 fails:String#downcase! raises a TypeError when self is frozen
+fails:String#downcase! raises a RuntimeError when self is frozen

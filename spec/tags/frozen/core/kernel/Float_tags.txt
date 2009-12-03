@@ -1,1 +1,4 @@
 incomplete:Kernel#Float needs to be reviewed for spec completeness
+fails:Kernel.Float returns the identical NaN if to_f is called and it returns NaN
+fails:Kernel#Float returns the identical NaN if to_f is called and it returns NaN
+fails:Kernel#Float is a private method

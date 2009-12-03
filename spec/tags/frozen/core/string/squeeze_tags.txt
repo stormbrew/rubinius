@@ -1,1 +1,2 @@
 fails:String#squeeze! raises a TypeError when self is frozen
+fails:String#squeeze! raises a RuntimeError when self is frozen

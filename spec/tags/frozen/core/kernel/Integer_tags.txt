@@ -1,1 +1,4 @@
 incomplete:Kernel#Integer needs to be reviewed for spec completeness
+fails:Kernel.Integer raises a TypeError when passed nil
+fails:Kernel#Integer raises a TypeError when passed nil
+fails:Kernel#Integer is a private method

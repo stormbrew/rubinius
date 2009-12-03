@@ -1,2 +1,5 @@
 fails:String#concat raises a TypeError when self is frozen
 fails:String#concat with Fixnum raises a TypeError when self is frozen
+fails:String#concat raises a RuntimeError when self is frozen
+fails:String#concat raises ArgumentError for negative length argument
+fails:String#concat with Fixnum raises a RuntimeError when self is frozen

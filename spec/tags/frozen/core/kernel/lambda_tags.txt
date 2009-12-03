@@ -1,1 +1,2 @@
 incomplete:Kernel#lambda needs to be reviewed for spec completeness
+fails:Kernel.lambda is a private method

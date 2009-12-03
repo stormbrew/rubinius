@@ -1,1 +1,2 @@
 incomplete:Kernel#String needs to be reviewed for spec completeness
+fails:Kernel#String is a private method

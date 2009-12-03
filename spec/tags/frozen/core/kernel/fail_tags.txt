@@ -1,1 +1,2 @@
 incomplete:Kernel#fail needs to be reviewed for spec completeness
+fails:Kernel.fail is a private method

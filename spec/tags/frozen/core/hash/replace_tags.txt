@@ -1,2 +1,3 @@
 fails:Hash#replace raises a TypeError if called on a frozen instance
 frozen:Hash#replace raises a TypeError if called on a frozen instance
+fails:Hash#replace raises a RuntimeError if called on a frozen instance

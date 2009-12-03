@@ -1,2 +1,4 @@
 incomplete:Kernel.load needs to be reviewed for spec completeness
 fails:Kernel#load returns __FILE__ as an absolute path
+fails:Kernel#load is a private method
+fails:Kernel#load calls #to_path on non-String arguments

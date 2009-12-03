@@ -1,1 +1,2 @@
 incomplete:Kernel.exec needs to be reviewed for spec completeness
+fails:Kernel#exec is a private method

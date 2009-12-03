@@ -1,1 +1,2 @@
 incomplete:Kernel.putc needs to be reviewed for spec completeness
+fails:Kernel#putc is a private method

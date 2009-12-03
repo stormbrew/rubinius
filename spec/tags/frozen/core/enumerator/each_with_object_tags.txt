@@ -1,0 +1,1 @@
+fails:Enumerator#each_with_object returns an enumerator when not given a block

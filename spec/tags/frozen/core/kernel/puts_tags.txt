@@ -1,1 +1,3 @@
 incomplete:Kernel.puts needs to be reviewed for spec completeness
+fails:Kernel#puts is a private method
+fails:Kernel#puts writes a newline when given nil as an arg

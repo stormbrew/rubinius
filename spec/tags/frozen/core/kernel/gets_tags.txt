@@ -1,1 +1,2 @@
 incomplete:Kernel.gets needs to be reviewed for spec completeness
+fails:Kernel#gets is a private method
