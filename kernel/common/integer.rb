@@ -122,6 +122,8 @@ class Integer < Numeric
     self
   end
 
+  alias_method :magnitude, :abs
+
   # Returns the Integer equal to int - 1.
   def pred
     self - 1

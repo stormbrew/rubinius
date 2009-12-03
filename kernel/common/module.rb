@@ -76,7 +76,7 @@ class Module
   end
 
   def class_variables
-    Rubinius.convert_to_names(__class_variables__)
+    __class_variables__
   end
 
   def name
@@ -242,22 +242,20 @@ class Module
   end
 
   def instance_methods(all=true)
-    methods = filter_methods(:public_names, all) |
-              filter_methods(:protected_names, all)
-
-    Rubinius.convert_to_names methods
+    filter_methods(:public_names, all) |
+      filter_methods(:protected_names, all)
   end
 
   def public_instance_methods(all=true)
-    Rubinius.convert_to_names(filter_methods(:public_names, all))
+    filter_methods(:public_names, all)
   end
 
   def private_instance_methods(all=true)
-    Rubinius.convert_to_names(filter_methods(:private_names, all))
+    filter_methods(:private_names, all)
   end
 
   def protected_instance_methods(all=true)
-    Rubinius.convert_to_names(filter_methods(:protected_names, all))
+    filter_methods(:protected_names, all)
   end
 
   def filter_methods(filter, all)
@@ -413,7 +411,7 @@ class Module
       end
     end
 
-    Rubinius.convert_to_names tbl.keys
+    tbl.keys
   end
 
   def const_defined?(name)

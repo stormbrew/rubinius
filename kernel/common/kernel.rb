@@ -17,6 +17,7 @@ module Kernel
     end
     nil
   end
+  alias_method :__callee__, :__method__
 
   def Float(obj)
     raise TypeError, "can't convert nil into Float" if obj.nil?
@@ -97,6 +98,7 @@ module Kernel
   # and use String(obj, :to_str) instead of StringValue(obj)
 
   def StringValue(obj)
+    return obj.to_s if obj.is_a? Symbol # 1.9 treats symbols as string-like
     Type.coerce_to(obj, String, :to_str)
   end
   private :StringValue
@@ -135,6 +137,12 @@ module Kernel
   end
   module_function :warning
 
+  def define_singleton_method(*args, &block)
+    class << self
+      self
+    end.send(:define_method, *args, &block)
+  end
+
   def exit(code=0)
     if code.equal? true
       code = 0
@@ -157,6 +165,11 @@ module Kernel
     Process.abort(msg)
   end
   module_function :abort
+
+  def enum_for(method=:each, *args)
+    Enumerator.new(self, method, *args)
+  end
+  alias_method :to_enum, :enum_for
 
   def printf(target, *args)
     if target.kind_of? IO
@@ -307,7 +320,7 @@ module Kernel
   module_function :caller
 
   def global_variables
-    Rubinius.convert_to_names Rubinius::Globals.variables
+    Rubinius::Globals.variables
   end
   module_function :global_variables
 
@@ -570,7 +583,7 @@ module Kernel
   end
 
   def private_singleton_methods
-    Rubinius.convert_to_names metaclass.method_table.private_names
+    metaclass.method_table.private_names
   end
 
   def protected_methods(all=true)
@@ -578,7 +591,7 @@ module Kernel
   end
 
   def protected_singleton_methods
-    Rubinius.convert_to_names metaclass.method_table.protected_names
+    metaclass.method_table.protected_names
   end
 
   def public_methods(all=true)
@@ -587,9 +600,7 @@ module Kernel
 
   def singleton_methods(all=true)
     mt = metaclass.method_table
-    methods = (all ? mt.names : mt.public_names + mt.protected_names)
-
-    Rubinius.convert_to_names methods
+    all ? mt.names : mt.public_names + mt.protected_names
   end
 
   alias_method :send, :__send__
@@ -900,11 +911,3 @@ class SystemExit < Exception
   end
 
 end
-
-module Rubinius
-  # Ruby 1.8 returns strings for method and constant names
-  def self.convert_to_names(list)
-    list.map{|x| x.to_s}
-  end
-end
-

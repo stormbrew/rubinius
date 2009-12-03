@@ -787,9 +787,15 @@ class File < IO
     Stat.new(@path).mtime
   end
 
+  def size
+    stat.size
+  end
+
   def stat
     Stat.from_fd @descriptor
   end
+
+  alias_method :to_path, :path
 
   def truncate(length)
     length = Type.coerce_to(length, Integer, :to_int)

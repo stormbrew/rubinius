@@ -22,6 +22,14 @@ class Array
     new args
   end
 
+  # Try to convert obj into an array, using to_ary method.
+  # Returns converted array or nil if obj cannot be converted
+  # for any reason. This method is to check if an argument is an array.
+  def self.try_convert(obj)
+    return nil unless obj.respond_to?(:to_ary)
+    Type.coerce_to(obj, Array, :to_ary)
+  end
+
   # Creates a new Array. Without arguments, an empty
   # Array is returned. If the only argument is an object
   # that responds to +to_ary+, a copy of that Array is
@@ -1104,7 +1112,7 @@ class Array
   # Choose a random element, or the random n elements, from the array.
   # If the array is empty, the first form returns nil, and the second
   # form returns an empty array.
-  def choice(n=Undefined)
+  def sample(n=Undefined)
     return at(rand(size)) if n.equal? Undefined
 
     n = Type.coerce_to(n, Fixnum, :to_int)

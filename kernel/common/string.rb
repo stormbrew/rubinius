@@ -4,7 +4,6 @@ DEFAULT_RECORD_SEPARATOR = "\n"
 
 class String
   include Comparable
-  include Enumerable
 
   attr_accessor :data
   attr_accessor :num_bytes
@@ -24,6 +23,11 @@ class String
   def self.from_bytearray(ba, start, count)
     Ruby.primitive :string_from_bytearray
     raise PrimitiveFailure, "String.from_bytearray primitive failed"
+  end
+
+  def self.try_convert(obj)
+    return nil unless obj.respond_to?(:to_str)
+    Type.coerce_to(obj, String, :to_str)
   end
 
   def initialize(arg = Undefined)
@@ -748,7 +752,6 @@ class String
 
     self
   end
-  alias_method :each, :each_line
 
   alias_method :lines, :each_line
 
@@ -1093,6 +1096,20 @@ class String
   #   "0377bad".oct   #=> 255
   def oct
     self.to_inum(8, false)
+  end
+
+  def partition(pattern)
+    pattern = Type.coerce_to(pattern, String, :to_str) unless pattern.is_a? Regexp
+    i = index(pattern)
+    return [self, "", ""] unless i
+
+    if pattern.is_a? Regexp
+      match = Regexp.last_match
+      [match.pre_match, match[0], match.post_match]
+    else
+      last = i+pattern.length
+      [self[0...i], self[i...last], self[last...length]]
+    end
   end
 
   # Replaces the contents and taintedness of <i>string</i> with the corresponding
@@ -1806,18 +1823,27 @@ class String
   end
 
   def upto(stop, exclusive=false)
+    return to_enum :upto, stop, exclusive unless block_given?
     stop = StringValue(stop)
     return self if self > stop
 
-    after_stop = exclusive ? stop : stop.succ
-    current = self
+    if stop.size == 1 && size == 1
+      after_stop = stop[0] + (exclusive ? 0 : 1)
+      current = self[0]
+      until current == after_stop
+        yield current.chr
+        current += 1
+      end
+    else
+      after_stop = exclusive ? stop : stop.succ
+      current = self
 
-    until current == after_stop
-      yield current
-      current = StringValue(current.succ)
-      break if current.size > stop.size || current.size == 0
+      until current == after_stop
+        yield current
+        current = StringValue(current.succ)
+        break if current.size > stop.size || current.size == 0
+      end
     end
-
     self
   end
 

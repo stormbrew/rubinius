@@ -2,8 +2,8 @@
 #
 RUBY_ENGINE       = "rbx"
 RUBY_PLATFORM     = Rubinius::HOST.dup
-RUBY_VERSION      = "1.8.7"
-RUBY_PATCHLEVEL   = 174
+RUBY_VERSION      = "1.9.2"
+RUBY_PATCHLEVEL   = 42
 RUBY_RELEASE_DATE = "2009-11-25"
 RUBY_COPYRIGHT    = "rubinius - Copyright (C) 2006-2009 Evan Phoenix"
 

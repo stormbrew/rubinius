@@ -501,6 +501,8 @@ class Dir
     self
   end
   
+  alias_method :to_path, :path
+
   class << self
     alias_method :pwd, :getwd
     alias_method :delete, :rmdir

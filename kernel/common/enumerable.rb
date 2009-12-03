@@ -295,6 +295,135 @@ module Enumerable
 
   ##
   # :call-seq:
+  #    enum.chunk {|elt| ... } => enumerator
+  #    enum.chunk(initial_state) {|elt, state| ... } => enumerator
+  #
+  # Creates an enumerator for each chunked elements.
+  # The consecutive elements which have same block value are chunked.
+  #
+  # The result enumerator yields the block value and an array of chunked elements.
+  # So "each" method can be called as follows.
+  #
+  #   enum.chunk {|elt| key }.each {|key, ary| ... }
+  #   enum.chunk(initial_state) {|elt, state| key }.each {|key, ary| ... }
+  #
+  # For example, consecutive even numbers and odd numbers can be
+  # splitted as follows.
+  #
+  #   [3,1,4,1,5,9,2,6,5,3,5].chunk {|n|
+  #     n.even?
+  #   }.each {|even, ary|
+  #     p [even, ary]
+  #   }
+  #   #=> [false, [3, 1]]
+  #   #   [true, [4]]
+  #   #   [false, [1, 5, 9]]
+  #   #   [true, [2, 6]]
+  #   #   [false, [5, 3, 5]]
+  #
+  # This method is especially useful for sorted series of elements.
+  # The following example counts words for each initial letter.
+  #
+  #   open("/usr/share/dict/words", "r:iso-8859-1") {|f|
+  #     f.chunk {|line| line.ord }.each {|ch, lines| p [ch.chr, lines.length] }
+  #   }
+  #   #=> ["\n", 1]
+  #   #   ["A", 1327]
+  #   #   ["B", 1372]
+  #   #   ["C", 1507]
+  #   #   ["D", 791]
+  #   #   ...
+  #
+  # The following key values has special meaning:
+  # - nil and :_separator specifies that the elements are dropped.
+  # - :_alone specifies that the element should be chunked as a singleton.
+  # Other symbols which begins an underscore are reserved.
+  #
+  # nil and :_separator can be used to ignore some elements.
+  # For example, the sequence of hyphens in svn log can be eliminated as follows.
+  #
+  #   sep = "-"*72 + "\n"
+  #   IO.popen("svn log README") {|f|
+  #     f.chunk {|line|
+  #       line != sep || nil
+  #     }.each {|_, lines|
+  #       pp lines
+  #     }
+  #   }
+  #   #=> ["r20018 | knu | 2008-10-29 13:20:42 +0900 (Wed, 29 Oct 2008) | 2 lines\n",
+  #   #    "\n",
+  #   #    "* README, README.ja: Update the portability section.\n",
+  #   #    "\n"]
+  #   #   ["r16725 | knu | 2008-05-31 23:34:23 +0900 (Sat, 31 May 2008) | 2 lines\n",
+  #   #    "\n",
+  #   #    "* README, README.ja: Add a note about default C flags.\n",
+  #   #    "\n"]
+  #   #   ...
+  #
+  # paragraphs separated by empty lines can be parsed as follows.
+  #
+  #   File.foreach("README").chunk {|line|
+  #     /\A\s*\z/ !~ line || nil
+  #   }.each {|_, lines|
+  #     pp lines
+  #   }
+  #
+  # :_alone can be used to pass through bunch of elements.
+  # For example, sort consecutive lines formed as Foo#bar and
+  # pass other lines, chunk can be used as follows.
+  #
+  #   pat = /\A[A-Z][A-Za-z0-9_]+\#/
+  #   open(filename) {|f|
+  #     f.chunk {|line| pat =~ line ? $& : :_alone }.each {|key, lines|
+  #       if key != :_alone
+  #         print lines.sort.join('')
+  #       else
+  #         print lines.join('')
+  #       end
+  #     }
+  #   }
+  #
+  # If the block needs to maintain state over multiple elements,
+  # _initial_state_ argument can be used.
+  # If non-nil value is given,
+  # it is duplicated for each "each" method invocation of the enumerator.
+  # The duplicated object is passed to 2nd argument of the block for "chunk" method.
+
+  def chunk(initial_state = nil, &original_block)
+    raise ArgumentError, "no block given" unless block_given?
+    ::Enumerator.new do |yielder|
+      previous = nil
+      accumulate = []
+      block = initial_state.nil? ? original_block : Proc.new{|val| original_block.yield(val, initial_state.clone)}
+      each do |val|
+        key = block.yield(val)
+        if key.nil? || (key.is_a?(Symbol) && key.to_s[0,1] == "_")
+          yielder.yield [previous, accumulate] unless accumulate.empty?
+          accumulate = []
+          previous = nil
+          case key
+          when nil, :_separator
+          when :_singleton
+            yielder.yield [key, [val]]
+          else
+            raise RuntimeError, "symbol beginning with an underscore are reserved"
+          end
+        else
+          if previous.nil? || previous == key
+            accumulate << val
+          else
+            yielder.yield [previous, accumulate] unless accumulate.empty?
+            accumulate = [val]
+          end
+          previous = key
+        end
+      end
+      yielder.yield [previous, accumulate] unless accumulate.empty?
+    end
+  end
+
+  ##
+  # :call-seq:
   #   enum.count(item)             => int
   #   enum.count { | obj | block } => int
   #
@@ -334,12 +463,11 @@ module Enumerable
       each { |o| ary << yield(o) }
       ary
     else
-      to_a
+      to_enum :collect
     end
   end
 
   alias_method :map, :collect
-
 
   ##
   # :call-seq:
@@ -416,8 +544,6 @@ module Enumerable
     nil
   end
 
-  alias_method :enum_cons, :each_cons
-
   def each_slice(slice_size)
     n = Type.coerce_to(slice_size, Fixnum, :to_int)
     raise ArgumentError, "invalid slice size: #{n}" if n <= 0
@@ -435,8 +561,6 @@ module Enumerable
     yield a unless a.empty?
     nil
   end
-
-  alias_method :enum_slice, :each_slice
 
   ##
   # :call-seq:
@@ -459,7 +583,25 @@ module Enumerable
     self
   end
 
-  alias_method :enum_with_index, :each_with_index
+  ##
+  # :call-seq:
+  #   each_with_object(obj) {|(*args), memo_obj| ... }
+  #   each_with_object(obj)
+  #
+  # Iterates the given block for each element with an arbitrary
+  # object given, and returns the initially given object.
+  #
+  # If no block is given, returns an enumerator.
+  #
+  # e.g.:
+  #     evens = (1..10).each_with_object([]) {|i, a| a << i*2 }
+  #     # => [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+
+  def each_with_object(memo)
+    return to_enum :each_with_object, memo unless block_given?
+    each {|obj| yield obj, memo}
+    memo
+  end
 
   ##
   # :call-seq:
@@ -541,6 +683,22 @@ module Enumerable
     each{|obj| return obj}
     nil
   end
+
+  ##
+  # :call-seq:
+  #    enum.flat_map       {| obj | block }  => array
+  #    enum.collect_concat {| obj | block }  => array
+  #
+  # Returns a new array with the concatenated results of running
+  # <em>block</em> once for every element in <i>enum</i>.
+  #
+  #    [[1,2],[3,4]].flat_map {|i| i }   #=> [1, 2, 3, 4]
+
+  def flat_map(&block)
+    return to_enum(:flat_map) unless block_given?
+    map(&block).flatten(1)
+  end
+  alias_method :collect_concat, :flat_map
 
   ##
   # :call-seq:

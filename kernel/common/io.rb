@@ -175,6 +175,13 @@ class IO
   attr_accessor :descriptor
   attr_accessor :mode
 
+  def self.binread(file, *arg)
+    raise ArgumentError, "wrong number of arguments (#{1+arg.size} for 1..3)" unless arg.size < 3
+    File.open(file,"rb") do |f|
+      f.read(*arg)
+    end
+  end
+
   def self.for_fd(fd, mode = nil)
     new fd, mode
   end

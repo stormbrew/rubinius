@@ -119,6 +119,14 @@ class Hash
     hash
   end
 
+  def self.try_convert(x)
+    return nil unless x.respond_to? :to_hash
+    x.to_hash
+  end
+
+  alias_method :key, :index
+
+
   def ==(other)
     return true if self.equal? other
     unless other.kind_of? Hash
@@ -216,6 +224,12 @@ class Hash
 
   def default_proc
     @default if @default_proc
+  end
+
+  # Sets the default proc to be executed on each key lookup
+  def default_proc=(proc)
+    @default = Type.coerce_to(proc, Proc, :to_proc)
+    @default_proc = true
   end
 
   def delete(key)
@@ -334,6 +348,7 @@ class Hash
     end
     nil
   end
+  alias_method :key, :index
 
   def initialize(default = Undefined, &block)
     if !default.equal?(Undefined) and block
