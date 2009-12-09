@@ -35,7 +35,16 @@ def compile_ext(name, opts={})
     task task_name do
       ext_helper = File.expand_path "../ext_helper.rb", __FILE__
       Dir.chdir ext_dir do
-        ruby "-S rake #{'-t' if $verbose} -r #{ext_helper} #{ext_task_name}"
+        if File.exists? "Rakefile"
+          ruby "-S rake #{'-t' if $verbose} -r #{ext_helper} #{ext_task_name}"
+        else
+          ruby "extconf.rb"
+          if File.exists?("Makefile")
+            sh "make"
+          else
+            warn "Unable to build #{name}"
+          end
+        end
       end
     end
   end
@@ -52,5 +61,6 @@ compile_ext "digest:sha1"
 compile_ext "digest:sha2"
 compile_ext "digest:bubblebabble"
 compile_ext "syck"
+compile_ext "openssl"
 compile_ext "melbourne", :task => "rbx", :doc => "for Rubinius"
 compile_ext "melbourne", :task => "mri", :doc => "for MRI"
