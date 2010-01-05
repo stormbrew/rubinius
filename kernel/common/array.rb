@@ -998,10 +998,10 @@ class Array
     # It would be easy to have "product" yield to a block but the standard
     # simply returns an array, so you'll find a simple call to "to_a" at the end.
     #
-    trivial_enum = Enumerator.new_with_block{|yielder| yielder.yield [] }
+    trivial_enum = Enumerator.new{|yielder| yielder.yield [] }
     [self, *arg].map{|x| Type.coerce_to(x, Array, :to_ary)}.
       inject(trivial_enum) do |enum, array|
-        Enumerator.new_with_block do |yielder|
+        Enumerator.new do |yielder|
           enum.each do |partial_product|
             array.each do |obj|
               yielder.yield partial_product + [obj]
