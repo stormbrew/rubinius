@@ -993,22 +993,27 @@ class Array
   # The length of the returned array is the product of the length of
   # ary and the argument arrays
   def product(*arg)
-    # Implementation notes: We build an enumerator for all the combinations
-    # by building it up successively using "inject" and starting from a trivial enumerator.
-    # It would be easy to have "product" yield to a block but the standard
-    # simply returns an array, so you'll find a simple call to "to_a" at the end.
+    # Implementation notes: We build a block that will generate all the combinations
+    # by building it up successively using "inject" and starting with one
+    # responsible to append the values.
     #
-    trivial_enum = Enumerator.new{|yielder| yielder.yield [] }
-    [self, *arg].map{|x| Type.coerce_to(x, Array, :to_ary)}.
-      inject(trivial_enum) do |enum, array|
-        Enumerator.new do |yielder|
-          enum.each do |partial_product|
-            array.each do |obj|
-              yielder.yield partial_product + [obj]
-            end
-          end
+    result = []
+
+    arg.map!{|x| Type.coerce_to(x, Array, :to_ary)}
+    arg.reverse! # to get the results in the same order as in MRI, vary the last argument first
+    arg.push self
+
+    outer_lambda = arg.inject(result.method(:push)) do |proc, values|
+      lambda do |partial|
+        values.each do |val|
+          proc.call(partial.dup << val)
         end
-    end.to_a
+      end
+    end
+
+    outer_lambda.call([])
+
+    result
   end
 
   # Appends the given object(s) to the Array and returns
