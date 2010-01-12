@@ -27,17 +27,5 @@ class MSpecScript
     '^spec/ruby/library/net/http',
     '^spec/ruby/library/ping',
     '^spec/ruby/library/syslog',
-
-    # 1.9 features
-    '^spec/ruby/library/cmath',
-    '^spec/ruby/library/continuation',
-    '^spec/ruby/library/coverage',
-    '^spec/ruby/library/fiber',
-    '^spec/ruby/library/json',
-    '^spec/ruby/library/minitest',
-    '^spec/ruby/library/prime',
-    '^spec/ruby/library/ripper',
-    '^spec/ruby/library/rake',
-    '^spec/ruby/library/rubygems',
-  ]
+  ] + get(:obsolete_library)
 end

@@ -12,27 +12,49 @@ class MSpecScript
     'spec/ruby/core',
     'spec/core',
 
-    # 1.9
-    '^core/basicobject'
+    # 1.9 syntax (TODO: remove)
+    '^core/proc/parameters_spec.rb',
+
+    # 1.8
+    '^core/continuation'
+  ]
+
+  set :obsolete_library, [
+    # obsolete libraries
+    '^library/cgi-lib',
+    '^library/date2',
+    '^library/enumerator',
+    '^library/eregex',
+    '^library/finalize',
+    '^library/ftools',
+    '^library/generator',
+    '^library/getopts',
+    '^library/importenv',
+    '^library/jcode',
+    '^library/mailread',
+    '^library/parsearg',
+    '^library/parsedate',
+    '^library/ping',
+    '^library/readbytes',
+    '^library/rubyunit',
+    '^library/runit',
+    '^library/soap',
+    '^library/wsdl',
+    '^library/xsd',
+    '^library/Win32API',
+
+    '^library/test/unit/collector',
+    '^library/test/unit/ui',
+    '^library/test/unit/util',
+
+    '^library/dl',  # reimplemented and API changed
   ]
 
   # Standard library specs
   set :library, [
     'spec/ruby/library',
     'spec/library',
-
-    # 1.9 features
-    '^library/cmath',
-    '^library/continuation',
-    '^library/coverage',
-    '^library/fiber',
-    '^library/json',
-    '^library/minitest',
-    '^library/prime',
-    '^library/ripper',
-    '^library/rake',
-    '^library/rubygems',
-  ]
+  ] + get(:obsolete_library)
 
   set :capi, [
     'spec/capi',
@@ -56,20 +78,7 @@ class MSpecScript
     'spec/ruby/language',
     'spec/ruby/core',
     'spec/ruby/library',
-
-    # 1.9 features
-    '^spec/ruby/core/basicobject',
-    '^spec/ruby/library/cmath',
-    '^spec/ruby/library/continuation',
-    '^spec/ruby/library/coverage',
-    '^spec/ruby/library/fiber',
-    '^spec/ruby/library/json',
-    '^spec/ruby/library/minitest',
-    '^spec/ruby/library/prime',
-    '^spec/ruby/library/ripper',
-    '^spec/ruby/library/rake',
-    '^spec/ruby/library/rubygems',
-  ]
+  ] + get(:obsolete_library)
 
   # An ordered list of the directories containing specs to run
   # as the CI process.
