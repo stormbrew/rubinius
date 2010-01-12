@@ -9,6 +9,7 @@ enumerable.rbc
 enumerator.rbc
 argf.rbc
 tuple.rbc
+encoding.rbc
 exception.rbc
 undefined.rbc
 hash.rbc

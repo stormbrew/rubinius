@@ -427,7 +427,7 @@ class Module
     tbl.keys
   end
 
-  def const_defined?(name)
+  def const_defined?(name, inherit=true)
     @constants.has_key? normalize_const_name(name)
   end
 
