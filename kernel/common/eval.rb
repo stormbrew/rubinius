@@ -12,7 +12,7 @@ module Kernel
       if scope.method.local_names
         scope.method.local_names.each do |name|
           name = name.to_s
-          locals << name unless name =~ /\A(@{1,2}|\$)/   # @todo Weed out "constants"? --rue
+          locals << name
         end
       end
 
@@ -73,7 +73,7 @@ module Kernel
     end
 
     cm = Rubinius::CompilerNG.compile_eval string, binding.variables, filename, lineno
-    cm.scope = binding.static_scope
+    cm.scope = binding.static_scope.dup
     cm.name = :__eval__
 
     yield cm if block_given?
@@ -196,11 +196,11 @@ class Module
   # intermediate binding.
   #++
 
-  def module_eval(string=Undefined, filename="(eval)", line=1, &prc)
+  def module_eval(string=undefined, filename="(eval)", line=1, &prc)
     # we have a custom version with the prc, rather than using instance_exec
     # so that we can setup the StaticScope properly.
     if prc
-      unless string.equal?(Undefined)
+      unless string.equal?(undefined)
         raise ArgumentError, "cannot pass both string and proc"
       end
 
@@ -208,7 +208,7 @@ class Module
       env = prc.block
       static_scope = env.method.scope.using_current_as(self)
       return env.call_under(self, static_scope, self)
-    elsif string.equal?(Undefined)
+    elsif string.equal?(undefined)
       raise ArgumentError, 'block not supplied'
     end
 

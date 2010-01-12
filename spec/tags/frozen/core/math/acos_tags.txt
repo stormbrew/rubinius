@@ -1,2 +1,0 @@
-fails:Math.acos coerces string argument with Float() without calling to_f
-fails:Math.acos raises a TypeError if the string argument cannot be coerced with Float()

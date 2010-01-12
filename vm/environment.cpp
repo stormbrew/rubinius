@@ -20,7 +20,7 @@
 #include <llvm/System/Threading.h>
 #endif
 
-#ifdef linux
+#ifdef USE_EXECINFO
 #include <execinfo.h>
 #endif
 
@@ -39,8 +39,11 @@
 
 namespace rubinius {
 
-  Environment::Environment()
-    : agent(0)
+  Environment::Environment(int argc, char** argv)
+    : argc_(argc)
+    , argv_(argv)
+    , signature_(0)
+    , agent(0)
   {
 #ifdef ENABLE_LLVM
     assert(llvm::llvm_start_multithreaded() && "llvm doesn't support threading!");
@@ -48,24 +51,13 @@ namespace rubinius {
 
     shared = new SharedState(config, config_parser);
     state = shared->new_vm();
+
+    VM::init_stack_size();
   }
 
   Environment::~Environment() {
     VM::discard(state);
     SharedState::discard(shared);
-  }
-
-  void Environment::load_config_argv(int argc, char** argv) {
-    config_parser.process_argv(argc, argv);
-    config_parser.update_configuration(config);
-
-    if(config.print_config > 1) {
-      std::cout << "========= Configuration =========\n";
-      config.print(true);
-      std::cout << "=================================\n";
-    } else if(config.print_config) {
-      config.print();
-    }
   }
 
   void cpp_exception_bug() {
@@ -83,13 +75,49 @@ namespace rubinius {
     std::set_terminate(cpp_exception_bug);
   }
 
+  // Trampoline to call scheduler_loop()
+  static void* __thread_tramp__(void* arg) {
+    Environment* env = static_cast<Environment*>(arg);
+    env->scheduler_loop();
+    return NULL;
+  }
+
+  // Runs forever, telling the VM to reschedule threads ever 10 milliseconds
+  void Environment::scheduler_loop() {
+    // First off, we don't want this thread ever receiving a signal.
+    sigset_t mask;
+    sigfillset(&mask);
+    if(pthread_sigmask(SIG_SETMASK, &mask, NULL) != 0) {
+      abort();
+    }
+
+    struct timespec requested;
+    struct timespec actual;
+
+    requested.tv_sec = 0;
+    requested.tv_nsec = 10000000; // 10 milliseconds
+
+    Interrupts& interrupts = shared->interrupts;
+
+    for(;;) {
+      nanosleep(&requested, &actual);
+      if(interrupts.enable_preempt) {
+        interrupts.set_timer();
+      }
+    }
+  }
+
+  // Create the preemption thread and call scheduler_loop() in the new thread
   void Environment::enable_preemption() {
-    state->setup_preemption();
+    if(pthread_create(&preemption_thread_, NULL, __thread_tramp__, this) != 0) {
+      std::cerr << "Unable to create preemption thread!\n";
+      exit(1);
+    }
   }
 
   static void null_func(int sig) {}
 
-#ifdef linux
+#ifdef USE_EXECINFO
   static void segv_handler(int sig) {
     static int crashing = 0;
     void *array[32];
@@ -178,19 +206,21 @@ namespace rubinius {
     // Ignore sigpipe.
     signal(SIGPIPE, SIG_IGN);
 
-    // On linux, setup some crash handlers
-#ifdef linux
-    signal(SIGSEGV, segv_handler);
-    signal(SIGBUS,  segv_handler);
-    signal(SIGILL,  segv_handler);
-    signal(SIGFPE,  segv_handler);
-    signal(SIGABRT, segv_handler);
+    // If we have execinfo, setup some crash handlers
+#ifdef USE_EXECINFO
+    if(!getenv("DISABLE_SEGV")) {
+      signal(SIGSEGV, segv_handler);
+      signal(SIGBUS,  segv_handler);
+      signal(SIGILL,  segv_handler);
+      signal(SIGFPE,  segv_handler);
+      signal(SIGABRT, segv_handler);
 
-    // Force glibc to load the shared library containing backtrace()
-    // now, so that we don't have to try and load it in the signal
-    // handler.
-    void* ary[1];
-    backtrace(ary, 1);
+      // Force glibc to load the shared library containing backtrace()
+      // now, so that we don't have to try and load it in the signal
+      // handler.
+      void* ary[1];
+      backtrace(ary, 1);
+    }
 #endif
 
     // Setup some other signal that normally just cause the process
@@ -214,12 +244,28 @@ namespace rubinius {
         process_xflags = false;
       }
 
-      if(!process_xflags || strncmp(arg, "-X", 2) != 0) {
+      if(process_xflags && strncmp(arg, "-X", 2) == 0) {
+        config_parser.import_line(arg + 2);
+      } else {
         ary->set(state, which_arg++, String::create(state, arg)->taint(state));
       }
     }
 
     state->set_const("ARGV", ary);
+
+    // Now finish up with the config
+
+    if(config.qa_port > 0) start_agent(config.qa_port);
+
+    config_parser.update_configuration(config);
+
+    if(config.print_config > 1) {
+      std::cout << "========= Configuration =========\n";
+      config.print(true);
+      std::cout << "=================================\n";
+    } else if(config.print_config) {
+      config.print();
+    }
   }
 
   void Environment::load_directory(std::string dir) {
@@ -267,13 +313,6 @@ namespace rubinius {
   }
 
   void Environment::boot_vm() {
-    if(config.qa_port > 0) start_agent(config.qa_port);
-
-    // Respect -Xint
-    if(config.jit_force_off) {
-      config.jit_enabled.set("no");
-    }
-
     state->initialize();
     state->boot();
 
@@ -293,6 +332,9 @@ namespace rubinius {
 
     CompiledFile* cf = CompiledFile::load(stream);
     if(cf->magic != "!RBIX") throw std::runtime_error("Invalid file");
+    if(signature_ > 0) {
+      if(cf->version != signature_) throw BadKernelFile(file);
+    }
 
     /** @todo Redundant? CompiledFile::execute() does this. --rue */
     state->thread_state()->clear_exception(true);
@@ -354,5 +396,73 @@ namespace rubinius {
     agent = new QueryAgent(*shared, port);
     if(config.qa_verbose) agent->set_verbose();
     agent->run();
+  }
+
+  /* Loads the runtime kernel files. They're stored in /kernel.
+   * These files consist of classes needed to bootstrap the kernel
+   * and just get things started in general.
+   *
+   * @param root [String] The file root for /kernel. This expects to find
+   *                      alpha.rbc (will compile if not there).
+   * @param env  [Environment&] The environment for Rubinius. It is the uber
+   *                      manager for multiple VMs and process-Ruby interaction. 
+   */
+  void Environment::load_kernel(std::string root) {
+    std::string dirs = root + "/index";
+    std::ifstream stream(dirs.c_str());
+    if(!stream) {
+      std::cerr << "It appears that " << root << "/index is missing.\n";
+      exit(1);
+    }
+
+    // Load the ruby file to prepare for bootstrapping Ruby!
+    // The bootstrapping for the VM is already done by the time we're here.
+
+    // First, pull in the signature file. This helps control when .rbc files need
+    // to be discarded.
+
+    std::string sig_path = root + "/signature";
+    std::ifstream sig_stream(sig_path.c_str());
+    if(sig_stream) {
+      sig_stream >> signature_;
+      state->globals.rubinius->set_const(state, "Signature",
+                       Integer::from(state, signature_));
+      sig_stream.close();
+    } else {
+      state->globals.rubinius->set_const(state, "Signature", Integer::from(state, 0));
+    }
+
+    // Load alpha
+    run_file(root + "/alpha.rbc");
+
+    // Read the index and load the directories listed.
+    while(!stream.eof()) {
+      std::string line;
+
+      stream >> line;
+      stream.get(); // eat newline
+
+      // skip empty lines
+      if(line.size() == 0) continue;
+
+      load_directory(root + "/" + line);
+    }
+  }
+
+  void Environment::run_from_filesystem(std::string root) {
+    int i = 0;
+    state->set_stack_start(&i);
+
+    load_platform_conf(root);
+    boot_vm();
+    load_argv(argc_, argv_);
+
+    state->initialize_config();
+
+    load_kernel(root);
+
+    enable_preemption();
+    start_signals();
+    run_file(root + "/loader.rbc");
   }
 }

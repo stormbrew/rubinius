@@ -32,6 +32,8 @@ class String
   end
 
   def substring(start, count)
+    Ruby.primitive :string_substring
+
     return nil if count < 0
 
     if start < 0
@@ -49,6 +51,18 @@ class String
     str.taint if self.tainted?
 
     return str
+  end
+
+  def find_string(pattern, start)
+    Ruby.primitive :string_index
+    raise PrimitiveFailure, "String#find_string failed"
+  end
+
+  private :find_string
+
+  def find_string_reverse(pattern, start)
+    Ruby.primitive :string_rindex
+    raise PrimitiveFailure, "String#find_string_reverse failed"
   end
 
   def ==(other)

@@ -336,8 +336,8 @@ module Kernel
   #
   # Sleeps the current thread for +duration+ seconds.
   #
-  def sleep(duration=Undefined)
-    if duration.equal? Undefined
+  def sleep(duration=undefined)
+    if duration.equal? undefined
       duration = nil
     elsif !duration.kind_of?(Numeric)
       raise TypeError, 'time interval must be a numeric value'
@@ -424,18 +424,6 @@ module Kernel
 
   def =~(other)
     false
-  end
-
-  def class_variable_get(sym)
-    self.class.class_variable_get sym
-  end
-
-  def class_variable_set(sym, value)
-    self.class.class_variable_set sym, value
-  end
-
-  def class_variables(symbols = false)
-    self.class.class_variables(symbols)
   end
 
   def extend(*modules)

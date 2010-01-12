@@ -2,7 +2,6 @@
 
 #include "builtin/symbol.hpp"
 #include "builtin/tuple.hpp"
-#include "builtin/sendsite.hpp"
 #include "builtin/global_cache_entry.hpp"
 #include "inline_cache.hpp"
 
@@ -399,6 +398,13 @@ namespace rubinius {
       stack_push(constant(Qtrue));
     }
 
+    void visit_push_undef() {
+      Object** addr = ls_->shared().globals.undefined.object_address();
+      Value* l_addr = constant(addr, ObjArrayTy);
+
+      stack_push(b().CreateLoad(l_addr, "undefined"));
+    }
+
     void visit_push_false() {
       stack_push(constant(Qfalse));
     }
@@ -732,7 +738,7 @@ namespace rubinius {
         set_has_side_effects();
 
         if(state()->config().jit_inline_debug) {
-          std::cerr << "inlining: primitive fixnum_equal"
+          ls_->log() << "inlining: primitive fixnum_equal"
             << " into "
             << state()->symbol_cstr(vmmethod()->original->name())
             << ".\n";
@@ -817,7 +823,7 @@ namespace rubinius {
       InlineCache* cache = reinterpret_cast<InlineCache*>(name);
       if(cache->classes_seen() == 0) {
         if(state()->config().jit_inline_debug) {
-          std::cerr << "inlining: primitive fixnum_lt"
+          ls_->log() << "inlining: primitive fixnum_lt"
             << " into "
             << state()->symbol_cstr(vmmethod()->original->name())
             << ".\n";
@@ -1111,6 +1117,16 @@ namespace rubinius {
       };
 
       return b().CreateGEP(vars, idx2, idx2+3, "local_pos");
+    }
+
+    void visit_push_stack_local(opcode which) {
+      Value* pos = stack_slot_position(vmmethod()->stack_size - which - 1);
+      stack_push(b().CreateLoad(pos, "stack_local"));
+    }
+
+    void visit_set_stack_local(opcode which) {
+      Value* pos = stack_slot_position(vmmethod()->stack_size - which - 1);
+      b().CreateStore(stack_top(), pos);
     }
 
     void visit_push_local(opcode which) {
@@ -1608,6 +1624,29 @@ namespace rubinius {
       stack_remove(args + 2);
       check_for_exception(ret);
       stack_push(ret);
+    }
+
+    void visit_zsuper(opcode which) {
+      set_has_side_effects();
+      InlineCache* cache = reinterpret_cast<InlineCache*>(which);
+
+      Signature sig(ls_, ObjType);
+      sig << VMTy;
+      sig << CallFrameTy;
+      sig << ObjType;
+      sig << ObjType;
+
+      Value* call_args[] = {
+        vm_,
+        call_frame_,
+        constant(cache->name),
+        stack_top()
+      };
+
+      flush_ip();
+      Value* ret = sig.call("rbx_zsuper_send", call_args, 4, "super_send", b());
+      check_for_exception(ret);
+      stack_set_top(ret);
     }
 
     void visit_add_scope() {
@@ -2592,15 +2631,16 @@ namespace rubinius {
       std::vector<const Type*> types;
 
       types.push_back(VMTy);
+      types.push_back(CallFrameTy);
       types.push_back(ObjType);
 
       FunctionType* ft = FunctionType::get(ObjType, types, false);
       Function* func = cast<Function>(
           module_->getOrInsertFunction("rbx_pop_exception", ft));
 
-      Value* call_args[] = { vm_, stack_pop() };
+      Value* call_args[] = { vm_, call_frame_, stack_pop() };
 
-      b().CreateCall(func, call_args, call_args+2);
+      b().CreateCall(func, call_args, call_args+3);
     }
 
     void visit_find_const(opcode which) {
@@ -2890,6 +2930,30 @@ namespace rubinius {
       };
 
       Value* str = sig.call("rbx_string_append", call_args, 3, "string", b());
+      stack_push(str);
+    }
+
+    void visit_string_build(opcode count) {
+      set_has_side_effects();
+
+      Signature sig(ls_, ObjType);
+
+      sig << VMTy;
+      sig << CallFrameTy;
+      sig << ls_->Int32Ty;
+      sig << ObjArrayTy;
+
+      Value* call_args[] = {
+        vm_,
+        call_frame_,
+        ConstantInt::get(ls_->Int32Ty, count),
+        stack_objects(count)
+      };
+
+      Value* str = sig.call("rbx_string_build", call_args, 4, "string", b());
+      stack_remove(count);
+
+      check_for_exception(str);
       stack_push(str);
     }
   };

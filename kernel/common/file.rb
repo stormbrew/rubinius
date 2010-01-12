@@ -105,10 +105,57 @@ class File < IO
   #
   #  File.basename("/home/gumby/work/ruby.rb")          #=> "ruby.rb"
   #  File.basename("/home/gumby/work/ruby.rb", ".rb")   #=> "ruby"
-  def self.basename(path,ext = "")
+  def self.basename(path,ext=undefined)
     path = StringValue(path)
+
+    slash = "/"
+
+    if pos = path.find_string_reverse(slash, path.size)
+      # special case. If the string ends with a /, ignore it.
+      if pos == path.size - 1
+
+        # Find the first non-/ from the right
+        data = path.data
+        found = false
+        pos.downto(0) do |i|
+          if data[i] != ?/
+            path = path.substring(0, i+1)
+            found = true
+            break
+          end
+        end
+
+        # edge case, it's all /'s, return "/"
+        return "/" unless found
+
+        # Now that we've trimmed the /'s at the end, search again
+        unless pos = path.find_string_reverse(slash, path.size)
+          # No /'s found, return path.
+          return path
+        end
+      end
+
+      path = path.substring(pos + 1, path.size - pos)
+    end
+
+    return path if ext.equal?(undefined)
+
+    # special case. if ext is ".*", remove any extension
+
     ext = StringValue(ext)
-    FFI::Platform::File.basename(path,ext)
+
+    if ext == ".*"
+      if pos = path.rindex(?.)
+        return path.substring(0, pos)
+      end
+    elsif pos = path.rindex(ext)
+      # Check that ext is the last thing in the string
+      if pos == path.size - ext.size
+        return path.substring(0, pos)
+      end
+    end
+
+    return path
   end
 
   ##
@@ -207,6 +254,21 @@ class File < IO
     st ? st.directory? : false
   end
 
+  def self.last_nonslash(path,start=nil)
+    # Find the first non-/ from the right
+    data = path.data
+    idx = nil
+    start ||= (path.size - 1)
+
+    start.downto(0) do |i|
+      if data[i] != ?/
+        return i
+      end
+    end
+
+    return nil
+  end
+
   ##
   # Returns all components of the filename given in
   # file_name except the last one. The filename must be
@@ -216,7 +278,35 @@ class File < IO
   #  File.dirname("/home/gumby/work/ruby.rb")   #=> "/home/gumby/work"
   def self.dirname(path)
     path = StringValue(path)
-    FFI::Platform::File.dirname(path)
+
+    # edge case
+    return "." if path.empty?
+
+    slash = "/"
+
+    # pull off any /'s at the end to ignore
+    chunk_size = last_nonslash(path)
+    return "/" unless chunk_size
+
+    if pos = path.find_string_reverse(slash, chunk_size)
+      return "/" if pos == 0
+
+      path = path.substring(0, pos)
+
+      return "/" if path == "/"
+
+      return path unless path.suffix? slash
+
+      # prune any trailing /'s
+      idx = last_nonslash(path, pos)
+
+      # edge case, only /'s, return /
+      return "/" unless idx
+
+      return path.substring(0, idx - 1)
+    end
+
+    return "."
   end
 
   ##
@@ -408,25 +498,50 @@ class File < IO
   def self.join(*args)
     return '' if args.empty?
 
-    ret = ''
-    args.each_with_index do |el, i|
-      value = nil
-      recursion = Thread.detect_recursion(el) do
-        if el.kind_of? Array
-          value = join(*el)
-        else
-          value = el.to_str rescue raise(TypeError)
-        end
-      end
-      raise ArgumentError, "recursive array" if recursion
+    sep = SEPARATOR
 
-      if i > 0
-        if value =~ /^#{SEPARATOR}/
-          ret.gsub!(/#{SEPARATOR}+$/, '')
-        elsif not ret =~ /#{SEPARATOR}$/
-          ret << SEPARATOR
-        end
+    # The first one is unrolled out of the loop to remove a condition
+    # from the loop. It seems needless, but you'd be surprised how much hinges
+    # on the performance of File.join
+    #
+    first = args.shift
+    case first
+    when String
+      first = first.dup
+    when Array
+      recursion = Thread.detect_recursion(first) do
+        first = join(*first)
       end
+
+      raise ArgumentError, "recursive array" if recursion
+    else
+      first = StringValue(first)
+    end
+
+    ret = first
+
+    args.each do |el|
+      value = nil
+
+      case el
+      when String
+        value = el
+      when Array
+        recursion = Thread.detect_recursion(el) do
+          value = join(*el)
+        end
+
+        raise ArgumentError, "recursive array" if recursion
+      else
+        value = StringValue(el)
+      end
+
+      if value.prefix? sep
+        ret.gsub!(/#{SEPARATOR}+$/, '')
+      elsif not ret.suffix? sep
+        ret << sep
+      end
+
       ret << value
     end
     ret

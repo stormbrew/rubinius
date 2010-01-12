@@ -1,1 +1,0 @@
-fails:IO#reopen calls #to_path on non-String arguments

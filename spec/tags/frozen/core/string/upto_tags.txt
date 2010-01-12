@@ -1,3 +1,0 @@
-fails:String#upto works with symbols
-fails:String#upto returns an enumerator when no block given
-fails:String#upto uses the ASCII map for single letters

@@ -36,7 +36,6 @@ cscope.out
 rakelib/ryan.rake
 runtime
 scratch
-spec/ruby
 stamp-h1
 stats
 tmp
@@ -62,7 +61,7 @@ tmtags
 /vm/log
 /vm/.deps
 
-/kernel/delta/signature.rb
+/kernel/signature.rb
 
 /lib/compiler/opcodes.rb
 

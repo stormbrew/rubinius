@@ -32,13 +32,13 @@ namespace rubinius {
 
       char* ptr = 0;
       if(ba->pinned_p()) {
-        ptr = reinterpret_cast<char*>(ba->bytes);
+        ptr = reinterpret_cast<char*>(ba->raw_bytes());
       } else {
         ByteArray* new_ba = ByteArray::create_pinned(env->state(), size + 1);
-        std::memcpy(new_ba->bytes, string->byte_address(), size);
+        std::memcpy(new_ba->raw_bytes(), string->byte_address(), size);
         string->data(env->state(), new_ba);
 
-        ptr = reinterpret_cast<char*>(new_ba->bytes);
+        ptr = reinterpret_cast<char*>(new_ba->raw_bytes());
       }
 
       ptr[size] = 0;
@@ -93,6 +93,13 @@ extern "C" {
 
   VALUE rb_String(VALUE object_handle) {
     return rb_convert_type(object_handle, 0, "String", "to_s");
+  }
+
+  void rb_str_modify(VALUE self_handle) {
+    NativeMethodEnvironment* env = NativeMethodEnvironment::get();
+
+    String* self = capi_get_string(env, self_handle);
+    self->unshare(env->state());
   }
 
   VALUE rb_str_append(VALUE self_handle, VALUE other_handle) {
@@ -176,7 +183,8 @@ extern "C" {
     return rb_funcall(self, rb_intern("to_sym"), 0);
   }
 
-  VALUE rb_str_new(const char* string, size_t length) {
+  VALUE rb_str_new(const char* string, long length) {
+    if(length < 0) rb_raise(rb_eArgError, "invalid string size");
     NativeMethodEnvironment* env = NativeMethodEnvironment::get();
 
     return env->get_handle(String::create(env->state(), string, length));
@@ -203,7 +211,7 @@ extern "C" {
     if(size != len) {
       if(size < len) {
         ByteArray* ba = ByteArray::create_pinned(env->state(), len+1);
-        std::memcpy(ba->bytes, string->byte_address(), size);
+        std::memcpy(ba->raw_bytes(), string->byte_address(), size);
         string->data(env->state(), ba);
       }
 
@@ -335,5 +343,15 @@ extern "C" {
 
     String* string = capi_get_string(env, self);
     return string->size();
+  }
+
+  void rb_str_set_len(VALUE self, size_t len) {
+    NativeMethodEnvironment* env = NativeMethodEnvironment::get();
+
+    String* string = capi_get_string(env, self);
+    if(string->size() > len) {
+      string->byte_address()[len] = 0;
+      string->num_bytes(env->state(), Fixnum::from(len));
+    }
   }
 }

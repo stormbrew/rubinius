@@ -1,1 +1,0 @@
-incomplete:Matrix#det needs to be reviewed for spec completeness

@@ -20,6 +20,11 @@ end
 require config_rb
 BUILD_CONFIG = Rubinius::BUILD_CONFIG
 
+unless BUILD_CONFIG[:config_version] == 1
+  STDERR.puts "Your configuration is outdated, please run ./configure first"
+  exit 1
+end
+
 $dlext = Config::CONFIG["DLEXT"]
 
 $: << "lib"
@@ -42,6 +47,16 @@ task :build => ["build:normal", "gem_bootstrap"]
 
 desc "Recompile all ruby system files"
 task :rebuild => %w[clean build]
+
+desc "Use to run Rubinius in CI"
+task :ci do
+  unless system("rake -q")
+    puts "<< ERROR IN CI, CLEANING AND RERUNNING >>"
+    system "rake -q clean"
+    system "find . -name *.rbc -delete"
+    sh "rake -q"
+  end
+end
 
 desc 'Remove rubinius build files'
 task :clean => %w[

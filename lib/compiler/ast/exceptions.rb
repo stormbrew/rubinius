@@ -34,6 +34,11 @@ module Rubinius
         # TODO: ?
         g.new_label.set!
 
+        g.push_exception
+        current_exc = g.new_stack_local
+        g.set_stack_local current_exc
+        g.pop
+
         g.state.push_ensure
         @body.bytecode(g)
         g.state.pop_ensure
@@ -42,9 +47,10 @@ module Rubinius
         g.goto ok
 
         ex.set!
+
         g.push_exception
 
-        g.state.push_rescue
+        g.state.push_rescue(current_exc)
         @ensure.bytecode(g)
         g.state.pop_rescue
         g.pop
@@ -88,15 +94,20 @@ module Rubinius
             @else.bytecode(g)
           end
         else
-          g.retry = g.new_label
+          outer_retry = g.retry
+
+          this_retry = g.new_label
           reraise = g.new_label
           els     = g.new_label
           done    = g.new_label
 
-          # Save the current exception into a local
+          # Save the current exception into a stack local
           g.push_exception
+          current_exc = g.new_stack_local
+          g.set_stack_local current_exc
+          g.pop
 
-          g.retry.set!
+          this_retry.set!
           ex = g.new_label
           g.setup_unwind ex, RescueType
 
@@ -109,6 +120,12 @@ module Rubinius
             g.break = g.new_label
           end
 
+          # Use a lazy label to patch up prematuraly leaving a begin
+          # body via retry.
+          if outer_retry
+            g.retry = g.new_label
+          end
+
           @body.bytecode(g)
           g.pop_unwind
           g.goto els
@@ -119,16 +136,36 @@ module Rubinius
               g.pop_unwind
 
               # Reset the outer exception
-              g.swap
+              g.push_stack_local current_exc
               g.pop_exception
+
               g.goto current_break
             end
 
             g.break = current_break
           end
 
+          if outer_retry
+            if g.retry.used?
+              g.retry.set!
+              g.pop_unwind
+
+              # Reset the outer exception
+              g.push_stack_local current_exc
+              g.pop_exception
+
+              g.goto outer_retry
+            end
+
+            g.retry = outer_retry
+          end
+
           ex.set!
-          @rescue.bytecode(g, reraise, done)
+
+          # Expose the retry label here only, not before this.
+          g.retry = this_retry
+
+          @rescue.bytecode(g, reraise, done, current_exc)
           reraise.set!
           g.reraise
 
@@ -139,7 +176,7 @@ module Rubinius
           end
           done.set!
 
-          g.swap
+          g.push_stack_local current_exc
           g.pop_exception
         end
         g.pop_modifiers
@@ -197,7 +234,7 @@ module Rubinius
         return true if value.kind_of? GlobalVariableAccess and value.name == :$!
       end
 
-      def bytecode(g, reraise, done)
+      def bytecode(g, reraise, done, current_exc)
         pos(g)
         body = g.new_label
 
@@ -229,9 +266,10 @@ module Rubinius
         current_break = g.break
         g.break = g.new_label
 
-        g.state.push_rescue
+        g.state.push_rescue(current_exc)
         @body.bytecode(g)
         g.state.pop_rescue
+
         g.clear_exception
         g.goto done
 
@@ -239,8 +277,10 @@ module Rubinius
           g.break.set!
           g.clear_exception
 
-          g.swap
+          # Reset the outer exception
+          g.push_stack_local current_exc
           g.pop_exception
+
           if current_break
             g.goto current_break
           else
@@ -251,7 +291,7 @@ module Rubinius
         g.break = current_break
         if @next
           if_false.set!
-          @next.bytecode(g, reraise, done)
+          @next.bytecode(g, reraise, done, current_exc)
         end
       end
     end

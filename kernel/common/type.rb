@@ -18,12 +18,31 @@ module Type
 
     begin
       ret = obj.__send__(meth)
-    rescue Exception => e
-      raise TypeError, "Coercion error: #{obj.inspect}.#{meth} => #{cls} failed:\n" \
-                       "(#{e.message})"
+    rescue Exception => orig
+      raise TypeError,
+            "Coercion error: #{obj.inspect}.#{meth} => #{cls} failed",
+            orig
     end
 
     return ret if self.obj_kind_of?(ret, cls)
+
+    raise TypeError, "Coercion error: obj.#{meth} did NOT return a #{cls} (was #{ret.class})"
+  end
+
+  ##
+  # Same as coerce_to but returns nil if conversion fails.
+  # Corresponds to MRI's rb_check_convert_type()
+  #
+  def self.convert_to(obj, cls, meth)
+    return obj if self.obj_kind_of?(obj, cls)
+
+    begin
+      ret = obj.__send__(meth)
+    rescue Exception
+      return nil
+    end
+
+    return ret if ret.nil? || self.obj_kind_of?(ret, cls)
 
     raise TypeError, "Coercion error: obj.#{meth} did NOT return a #{cls} (was #{ret.class})"
   end
@@ -36,9 +55,11 @@ module Type
 
     coerce_to(obj, Symbol, :to_sym)
   end
-  
-  def self.coerce_to_comparison(a, b, cmp = (a <=> b))
-    raise ArgumentError, "comparison of #{a} with #{b} failed" if cmp.nil?
+
+  def self.coerce_to_comparison(a, b)
+    unless cmp = (a <=> b)
+      raise ArgumentError, "comparison of #{a} with #{b} failed"
+    end
     cmp
   end
 end

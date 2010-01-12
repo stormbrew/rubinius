@@ -93,6 +93,13 @@ module Rubinius
       @slot   = 0
       @g      = self
       @state = []
+      @stack_locals = 0
+    end
+
+    def new_stack_local
+      idx = @stack_locals
+      @stack_locals += 1
+      return idx
     end
 
     def state
@@ -115,6 +122,8 @@ module Rubinius
       ary.map do |item|
         if item.respond_to? :to_ary
           convert_to_ary item.to_ary
+        elsif item.kind_of? TestGenerator
+          item.to_a
         else
           item
         end
@@ -352,12 +361,8 @@ module Rubinius
       g.send :__class_init__, 0
     end
 
-    def in_method(name, singleton=false)
-      if singleton
-        g.send :metaclass, 0
-      else
-        g.push_const :Rubinius
-      end
+    def in_singleton_method(name, sing)
+      g.push_const :Rubinius
 
       g.push_literal name
 
@@ -370,13 +375,36 @@ module Rubinius
 
       g.push_scope
 
-      if singleton then
-        g.send :attach_method, 3
+      if sing.kind_of? Array
+        g.add *sing
       else
-        g.push_variables
-        g.send :method_visibility, 0
-        g.send :add_defn_method, 4
+        g.add sing
       end
+
+      g.send :attach_method, 4
+    end
+
+    def in_method(name, singleton=false)
+      if singleton
+        raise "use in_singleton_method"
+      end
+
+      g.push_const :Rubinius
+
+      g.push_literal name
+
+      d = new_generator(g, name)
+
+      yield d
+      d.ret
+
+      g.push_literal(d)
+
+      g.push_scope
+
+      g.push_variables
+      g.send :method_visibility, 0
+      g.send :add_defn_method, 4
     end
 
     def in_module(name)
@@ -427,6 +455,20 @@ module Rubinius
       g.send :__module_init__, 0
     end
 
+    def save_exception
+      idx = new_stack_local
+      push_exception
+      set_stack_local idx
+      pop
+
+      return idx
+    end
+
+    def restore_exception(idx)
+      push_stack_local idx
+      pop_exception
+    end
+
     def in_rescue(*klasses)
       jump_retry   = g.new_label
       jump_else    = g.new_label
@@ -448,10 +490,13 @@ module Rubinius
 
         jump_top = g.new_label
         jump_top.set!
+
+        save_exception
       end
 
       g.push_modifiers
-      g.push_exception
+
+      r_saved = save_exception
 
       jump_retry.set!
 
@@ -495,8 +540,9 @@ module Rubinius
       yield :else
 
       jump_last.set!
-      g.swap
-      g.pop_exception
+
+      restore_exception r_saved
+
       g.pop_modifiers
 
       if has_ensure then

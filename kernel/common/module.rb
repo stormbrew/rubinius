@@ -82,7 +82,7 @@ class Module
   def name
     @module_name ? @module_name.to_s : ""
   end
-  
+
   alias_method :__name__, :name
 
   def to_s
@@ -110,16 +110,19 @@ class Module
   end
 
   def ancestors
-    if self.class == MetaClass
+    if kind_of? Class and __metaclass_object__
       out = []
     else
       out = [self]
     end
+
     sup = direct_superclass()
     while sup
-      if sup.class == Rubinius::IncludedModule
+      if sup.kind_of? Rubinius::IncludedModule
         out << sup.module
-      elsif sup.class != MetaClass
+      elsif sup.kind_of? Class
+        out << sup unless sup.__metaclass_object__
+      else
         out << sup
       end
       sup = sup.direct_superclass()
@@ -168,6 +171,18 @@ class Module
     end
 
     nil
+  end
+
+  # Like undef_method, but doesn't even check that the method exists. Used
+  # mainly to implement rb_undef_method.
+  def undef_method!(name)
+    name = Type.coerce_to_symbol(name)
+    @method_table.store name, nil, :undef
+    Rubinius::VM.reset_method_cache(name)
+
+    method_undefined(name) if respond_to? :method_undefined
+
+    name
   end
 
   def remove_method(*names)
@@ -238,7 +253,7 @@ class Module
       mod = mod.direct_superclass
     end
 
-    raise NameError, "Undefined method `#{name}' for #{self}"
+    raise NameError, "undefined method `#{name}' for #{self}"
   end
 
   def instance_methods(all=true)
@@ -259,9 +274,7 @@ class Module
   end
 
   def filter_methods(filter, all)
-    unless all or kind_of?(MetaClass) or kind_of?(Rubinius::IncludedModule)
-      return method_table.__send__ filter
-    end
+    return @method_table.__send__ filter unless all
 
     mod = self
     symbols = []
@@ -608,11 +621,11 @@ class Module
   def recursive_const_get(name, missing=true)
     name = normalize_const_name(name)
 
-    current, constant = self, Undefined
+    current, constant = self, undefined
 
     while current
-      constant = current.constants_table.fetch name, Undefined
-      unless constant.equal?(Undefined)
+      constant = current.constants_table.fetch name, undefined
+      unless constant.equal?(undefined)
         constant = constant.call if constant.kind_of?(Autoload)
         return constant
       end
@@ -621,8 +634,8 @@ class Module
     end
 
     if instance_of?(Module)
-      constant = Object.constants_table.fetch name, Undefined
-      unless constant.equal?(Undefined)
+      constant = Object.constants_table.fetch name, undefined
+      unless constant.equal?(undefined)
         constant = constant.call if constant.kind_of?(Autoload)
         return constant
       end

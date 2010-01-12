@@ -30,9 +30,11 @@ class Configure
     @gemsdir      = root + "/gems"
     @program_name = "rbx"
 
-    # Essential settings
+    # Essential settings (modify these for creating releases)
     @libversion = "1.0"
-    @version = "#{@libversion}.0-rc1"
+    @version = "#{@libversion}.0-rc2"
+    @release_date = "2010-01-04"
+    @config_version = 1
 
     if File.directory? root + "/.git"
       @buildrev = `git rev-list --all | head -n1`.chomp
@@ -59,9 +61,19 @@ class Configure
 
     o.doc " LLVM settings"
 
-    o.on("--enable-llvm", "[MODE]",
-         "Build with LLVM") do |which|
-      @llvm = (which || "auto").to_sym
+    @use_llvm = true
+
+    o.on "--disable-llvm", "Don't build with LLVM" do
+      @use_llvm = false
+    end
+
+    o.on "--enable-llvm", "Enable llvm (default)" do
+      # noop
+    end
+
+    @skip_system = false
+    o.on "--skip-system", "Don't consider a system LLVM installation" do
+      @skip_system = true
     end
 
     o.on "--llvm-path", "PATH", "Where to find LLVM" do |dir|
@@ -75,6 +87,13 @@ class Configure
     o.doc "\n File system paths for installing Rubinius"
 
     o.on "-P", "--prefix", "PATH", "Install Rubinius in subdirectories of PATH" do |dir|
+      dir = File.expand_path dir
+
+      if File.directory? dir and dir !~ /(rubinius|rbx)\/?$/
+        puts "The directory #{dir} already exists, installing to #{dir}/rubinius"
+        dir += "/rubinius"
+      end
+
       @bindir       = dir + "/bin"
       @includedir   = dir + "/include"
       @libdir       = dir
@@ -130,45 +149,79 @@ class Configure
     @options.parse ary
   end
 
+  require 'net/http'
+
+  def download(url, full_path)
+    begin
+      Net::HTTP.get_response(URI(url)) do |res|
+        size, total = 0, res.header['Content-Length'].to_i
+        File.open full_path, "w" do |f|
+          res.read_body do |chunk|
+            f << chunk
+            size += chunk.size
+            print "\r    [ %d%% (%d of %d) ]" % [(size * 100) / total, size, total]
+          end
+        end
+        puts ": done!"
+      end
+    rescue Exception => e
+      File.unlink full_path if File.exists?(full_path)
+      puts " ERROR"
+      return false
+    end
+
+    return true
+  end
+
   def update_prebuilt
     file = "llvm-#{@host}.tar.bz2"
     full_path = "vm/external_libs/prebuilt/#{file}"
 
+    dir = File.dirname full_path
+
+    Dir.mkdir dir unless File.exists? dir
+
     url = "http://asset.rubini.us/prebuilt/#{file}"
 
     unless File.exists?(full_path)
-      dir = File.dirname(full_path)
-      Dir.mkdir dir unless File.directory?(dir)
-      puts "Fetching #{url}..."
+      download url, full_path
 
-      system "curl -# -f -o \"#{full_path}\" #{url}"
-      if $?.exitstatus == 22
+      unless File.exists? full_path
         puts "ERROR. No #{file} available on server."
+        return false
       end
     end
 
-    puts "Prebuilt packages updated."
-
+    puts "    Prebuilt packages updated."
   end
 
-  LLVM_SVN_DIR = %w!vm external_libs llvm!
-  LLVM_SVN_URL = "http://llvm.org/svn/llvm-project/llvm/branches/release_26/"
+  def setup_source
+    url = "http://asset.rubini.us/prebuilt/llvm-2.6-source.tar.bz2"
+    path = "vm/external_libs/prebuilt/llvm-2.6-source.tar.bz2"
 
-  def setup_svn
-    unless File.directory?(@llvm_svn_dir)
-      print "  Checking out LLVM from svn: #{LLVM_SVN_URL}"
-      system "svn co -q #{LLVM_SVN_URL} #{@llvm_svn_dir}"
+    puts "  Downloading #{url}..."
+    return false unless download(url, path)
+
+    if File.exists?(path)
+      print "  Unpacking prebuilt LLVM source: "
+      system "cd vm/external_libs; tar xjf prebuilt/llvm-2.6-source.tar.bz2"
+      puts "done!"
+
+      if File.exists?("vm/external_libs/llvm/include")
+        puts "  Code appears to be proper svn tree."
+      else
+        puts "  Code doesn't appear to be proper LLVM tree!"
+        return false
+      end
+
+      @llvm = :svn
+      return true
     end
 
-    if File.exists?(File.join(@llvm_svn_dir, "include"))
-      puts "  Code appears to be proper svn tree."
-    else
-      puts "  Code in #{@llvm_svn_dir} doesn't appear to be proper LLVM tree!"
-      exit 1
-    end
   end
 
   def setup_prebuilt
+    puts "  Checking for prebuilt LLVM build..."
     file = "vm/external_libs/prebuilt/llvm-#{@host}.tar.bz2"
 
     update_prebuilt unless File.exists?(file)
@@ -198,6 +251,7 @@ class Configure
       end
 
       puts "ERROR. Doesn't appear to be built already!"
+      return false
     end
 
     puts "ERROR. Path doesn't exist."
@@ -219,6 +273,7 @@ class Configure
       puts "not found."
     end
 
+    # If they explicitly said where LLVM is, use that and fail hard.
     if @llvm_path
       unless setup_path
         puts "ABORT: Path '#{@llvm_path}' not a proper LLVM path"
@@ -228,11 +283,15 @@ class Configure
       return
     end
 
-    return if setup_prebuilt
-    return if setup_config
+    unless @skip_system
+      return if setup_config
+    end
 
-    @llvm = :svn
-    setup_svn
+    return if setup_prebuilt
+    return if setup_source
+
+    puts "WARNING: Unable to configure for LLVM, disabling support."
+    @use_llvm = false
   end
 
   def setup_config
@@ -245,7 +304,9 @@ class Configure
       config = File.join(which, "llvm-config")
       version = `#{config} --version`.strip
       parts = version.sub(/svn$/, "").split(".").map { |i| i.to_i }
-      if parts[0] < 2 or parts[1] < 6
+
+      # 2.6svn is an unknown beast, don't trust it.
+      if version == "2.6svn" or parts[0] < 2 or parts[1] < 6
         puts "too old of a version"
       else
         puts "found! (version #{version})"
@@ -309,30 +370,14 @@ class Configure
   end
 
   def process
-    print "Using LLVM: "
-    case @llvm
-    when :svn
-      puts "svn"
-      setup_svn
-    when :auto
-      puts "auto"
+    if @use_llvm
+      puts "Configuring LLVM..."
       setup_auto
-    when :config
-      puts "config"
-      exit 1 unless setup_config
-    when :prebuilt
-      unless setup_prebuilt
-        puts "No prebuilt LLVM available for #{@host}"
-        exit 1
-      end
-    when :path
-      puts "existing build"
-      exit 1 unless setup_path
-    when :no
-      puts "no"
     else
-      puts "unknown value '#{@llvm}'"
+      print "WARNING: LLVM disabled."
     end
+
+    puts
 
     detect_features
   end
@@ -342,6 +387,11 @@ class Configure
   end
 
   def write_config
+    unless @use_llvm
+      @llvm = :no
+      @llvm_configure = ""
+    end
+
     File.open @config, "w" do |f|
       f.puts <<-EOC
 module Rubinius
@@ -364,7 +414,9 @@ module Rubinius
     :gemsdir        => "#{@gemsdir}",
     :program_name   => "#{@program_name}",
     :version        => "#{@version}",
-    :libversion     => "#{@libversion}"
+    :libversion     => "#{@libversion}",
+    :release_date   => "#{@release_date}",
+    :config_version => #{@config_version}
   }
 end
       EOC
@@ -374,20 +426,21 @@ end
 
     File.open "vm/gen/config.h", "w" do |f|
       f.puts <<-EOC
-#define RBX_HOST        "#{@host}"
-#define RBX_CPU         "#{@cpu}"
-#define RBX_VENDOR      "#{@vendor}"
-#define RBX_OS          "#{@os}"
-#define RBX_BIN_PATH    "#{@bindir}"
-#define RBX_GEMS_PATH   "#{@gemsdir}"
-#define RBX_RUNTIME     "#{@runtime}"
-#define RBX_LIB_PATH    "#{@lib_path}"
-#define RBX_EXT_PATH    "#{@ext_path}"
-#define RBX_HDR_PATH    "#{@includedir}"
-#define RBX_VERSION     "#{@version}"
-#define RBX_LIB_VERSION "#{@libversion}"
-#define RBX_BUILD_REV   "#{@buildrev}"
-#define RBX_LDSHARED    "#{@ldshared}"
+#define RBX_HOST          "#{@host}"
+#define RBX_CPU           "#{@cpu}"
+#define RBX_VENDOR        "#{@vendor}"
+#define RBX_OS            "#{@os}"
+#define RBX_BIN_PATH      "#{@bindir}"
+#define RBX_GEMS_PATH     "#{@gemsdir}"
+#define RBX_RUNTIME       "#{@runtime}"
+#define RBX_LIB_PATH      "#{@lib_path}"
+#define RBX_EXT_PATH      "#{@ext_path}"
+#define RBX_HDR_PATH      "#{@includedir}"
+#define RBX_VERSION       "#{@version}"
+#define RBX_LIB_VERSION   "#{@libversion}"
+#define RBX_BUILD_REV     "#{@buildrev}"
+#define RBX_LDSHARED      "#{@ldshared}"
+#define RBX_RELEASE_DATE  "#{@release_date}"
       EOC
     end
   end

@@ -26,6 +26,13 @@ namespace rubinius {
     static Tuple* create(STATE, size_t fields);
     static Tuple* from(STATE, size_t fields, ...);
 
+    /** Shift all elements leftward, clear old slots. */
+    Tuple* lshift_inplace(STATE, Fixnum* shift);
+
+
+  /** Primitives */
+  public:
+
     // Ruby.primitive :tuple_allocate
     static Tuple* allocate(STATE, Fixnum* fields);
 

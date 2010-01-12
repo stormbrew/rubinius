@@ -1,3 +1,0 @@
-fails:Array#product returns converted arguments using :to_ary
-fails:Array#product returns the expected result
-fails:Array#product has no required argument

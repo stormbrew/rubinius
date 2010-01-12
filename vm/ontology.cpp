@@ -25,8 +25,6 @@
 #include "builtin/nativefunction.hpp"
 #include "builtin/nativemethod.hpp"
 #include "builtin/regexp.hpp"
-#include "builtin/selector.hpp"
-#include "builtin/sendsite.hpp"
 #include "builtin/staticscope.hpp"
 #include "builtin/string.hpp"
 #include "builtin/symbol.hpp"
@@ -63,12 +61,12 @@ namespace rubinius {
        recursion. */
     Class *cls = (Class*)om->allocate_object_raw(sizeof(Class));
 
-    /* We create these 9 classes in a particular way and in a particular
-     * order. We need all 9 to create fully initialized Classes and
+    /* We create these 8 classes in a particular way and in a particular
+     * order. We need all 8 to create fully initialized Classes and
      * Modules, so we just create them all uninitialized, then initialize
      * them all at once */
 
-    /* Class's klass is Class */
+    // Class's klass is Class
     cls->klass(state, cls);
     cls->ivars(state, Qnil);
     cls->set_obj_type(ClassType);
@@ -77,50 +75,45 @@ namespace rubinius {
     cls->set_class_id(shared.inc_class_count());
     cls->set_packed_size(0);
 
-    /* Set Class into the globals */
+    // Set Class into the globals
     GO(klass).set(cls);
 
-    /* Now do Object */
+    // Now do Object
     Class *object = new_basic_class((Class*)Qnil);
     GO(object).set(object);
 
     object->set_object_type(state, ObjectType);
 
-    /* Now Module */
+    // Now Module
     GO(module).set(new_basic_class(object));
     G(module)->set_object_type(state, ModuleType);
 
-    /* Fixup Class's superclass to be Module */
+    // Fixup Class's superclass to be Module
     cls->superclass(state, G(module));
 
-    /* Create MetaClass */
-    GO(metaclass).set(new_basic_class(cls));
-    G(metaclass)->set_object_type(state, MetaClassType);
-
-    /* Create Tuple */
+    // Create Tuple
     GO(tuple).set(new_basic_class(object));
     G(tuple)->set_object_type(state, TupleType);
 
-    /* Create LookupTable */
+    // Create LookupTable
     GO(lookuptable).set(new_basic_class(object));
     G(lookuptable)->set_object_type(state, LookupTableType);
 
-    /* Create LookupTableBucket */
+    // Create LookupTableBucket
     GO(lookuptablebucket).set(new_basic_class(object));
     G(lookuptablebucket)->set_object_type(state, LookupTableBucketType);
 
-    /* Create MethodTable */
-    GO(methtbl).set(new_basic_class(G(object)));
+    // Create MethodTable
+    GO(methtbl).set(new_basic_class(object));
     G(methtbl)->set_object_type(state, MethodTableType);
 
-    /* Create MethodTableBucket */
+    // Create MethodTableBucket
     GO(methtblbucket).set(new_basic_class(object));
     G(methtblbucket)->set_object_type(state, MethodTableBucketType);
 
     /* Now, we have:
      *  Class
      *  Module
-     *  MetaClass
      *  Object
      *  Tuple
      *  LookupTable
@@ -128,34 +121,47 @@ namespace rubinius {
      *  MethodTable
      *  MethodTableBucket
      *
-     *  With these 9 in place, we can now create fully initialized classes
-     *  and modules. */
+     *  With these 8 in place, we can now create fully initialized classes
+     *  and modules.
+     *
+     *  Next we need to finish up the MetaClass protocol (a.k.a. MOP).
+     *  The MetaClass of a subclass points to the MetaClass of the superclass.
+     */
 
-    /* Hook up the MetaClass protocols.
-     * MetaClasses of subclasses point to the MetaClass of the
-     * superclass. */
-    Object* mc = MetaClass::attach(this, object, cls);
+    // Object's MetaClass instance has Class for a superclass
+    Class* mc = MetaClass::attach(this, object, cls);
+    // Module's metaclass's superclass is Object's metaclass
     mc = MetaClass::attach(this, G(module), mc);
+    // Class's metaclass likewise has Module's metaclass above it
     MetaClass::attach(this, cls, mc);
 
-    // TODO not sure these are being setup properly
-    MetaClass::attach(this, G(metaclass), cls->metaclass(this));
-    MetaClass::attach(this, G(tuple), G(object)->metaclass(this));
-    MetaClass::attach(this, G(lookuptable), G(object)->metaclass(this));
-    MetaClass::attach(this, G(lookuptablebucket), G(object)->metaclass(this));
-    MetaClass::attach(this, G(methtbl), G(lookuptable)->metaclass(this));
-    MetaClass::attach(this, G(methtblbucket), G(object)->metaclass(this));
+    // See?
+    assert(object->superclass() == Qnil);
+    assert(object->klass()->superclass() == cls);
+
+    assert(G(module)->superclass() == object);
+    assert(G(module)->klass()->superclass() == object->klass());
+
+    assert(cls->superclass() == G(module));
+    assert(cls->klass()->superclass() == G(module)->klass());
+
+    // The other builtin classes get MetaClasses wired to Object's metaclass
+    mc = G(object)->metaclass(this);
+    MetaClass::attach(this, G(tuple), mc);
+    MetaClass::attach(this, G(lookuptable), mc);
+    MetaClass::attach(this, G(lookuptablebucket), mc);
+    MetaClass::attach(this, G(methtbl), mc);
+    MetaClass::attach(this, G(methtblbucket), mc);
 
     // Now, finish initializing the basic Class/Module
     G(object)->setup(this, "Object");
     G(klass)->setup(this, "Class");
     G(module)->setup(this, "Module");
-    G(metaclass)->setup(this, "MetaClass");
 
     // Create the namespace for various implementation classes
     GO(rubinius).set(new_module("Rubinius"));
 
-    // Finish initializing the rest of the special 9
+    // Finish initializing the rest of the special 8
     G(tuple)->setup(this, "Tuple", G(rubinius));
     G(tuple)->name(this, symbol("Rubinius::Tuple"));
 
@@ -228,8 +234,6 @@ namespace rubinius {
     Float::init(this);
     InstructionSequence::init(this);
     List::init(this);
-    SendSite::init(this);
-    Selector::init(this);
     init_ffi();
     init_native_libraries();
     Thread::init(this);
@@ -284,6 +288,10 @@ namespace rubinius {
     Object* main = new_object<Object>(G(object));
     GO(main).set(main);
     G(object)->set_const(this, "MAIN", main); // HACK test hooking up MAIN
+
+    Object* undef = new_object<Object>(G(object));
+    GO(undefined).set(undef);
+    G(object)->set_const(this, "Undefined", undef);
 
     GO(vm).set(new_class_under("VM", G(rubinius)));
     G(vm)->name(state, state->symbol("Rubinius::VM"));
@@ -343,6 +351,7 @@ namespace rubinius {
     G(rubinius)->set_const(state, "VERSION", String::create(state, RBX_VERSION));
     G(rubinius)->set_const(state, "LIB_VERSION", String::create(state, RBX_LIB_VERSION));
     G(rubinius)->set_const(state, "BUILD_REV", String::create(state, RBX_BUILD_REV));
+    G(rubinius)->set_const(state, "RELEASE_DATE", String::create(state, RBX_RELEASE_DATE));
     G(rubinius)->set_const(state, "LDSHARED", String::create(state, RBX_LDSHARED));
 
     G(rubinius)->set_const(state, "HOST", String::create(state, RBX_HOST));
@@ -362,35 +371,6 @@ namespace rubinius {
     G(rubinius)->set_const(state, "SIZEOF_SHORT", Fixnum::from(sizeof(short)));
     G(rubinius)->set_const(state, "SIZEOF_INT", Fixnum::from(sizeof(int)));
     G(rubinius)->set_const(state, "SIZEOF_LONG", Fixnum::from(sizeof(long)));
-
-#ifdef USE_DYNAMIC_INTERPRETER
-    if(shared.config.dynamic_interpreter_enabled) {
-      G(rubinius)->set_const(state, "INTERPRETER", symbol("dynamic"));
-    } else {
-      G(rubinius)->set_const(state, "INTERPRETER", symbol("static"));
-    }
-#else
-    G(rubinius)->set_const(state, "INTERPRETER", symbol("static"));
-#endif
-
-#ifdef ENABLE_LLVM
-    if(shared.config.jit_enabled) {
-      Array* ary = Array::create(state, 3);
-      ary->append(state, symbol("usage"));
-      if(shared.config.jit_inline_generic) {
-        ary->append(state, symbol("inline_generic"));
-      }
-
-      if(shared.config.jit_inline_blocks) {
-        ary->append(state, symbol("inline_blocks"));
-      }
-      G(rubinius)->set_const(state, "JIT", ary);
-    } else {
-      G(rubinius)->set_const(state, "JIT", Qfalse);
-    }
-#else
-    G(rubinius)->set_const(state, "JIT", Qnil);
-#endif
   }
 
   void VM::bootstrap_symbol() {
@@ -398,7 +378,6 @@ namespace rubinius {
     add_sym(object_id);
     add_sym(method_missing);
     add_sym(inherited);
-    add_sym(opened_class);
     add_sym(from_literal);
     add_sym(method_added);
     add_sym(send);
@@ -432,6 +411,11 @@ namespace rubinius {
       ern->set_const(state, symbol(name), current);
     } else {
       Class* cls = state->new_class(name, sce, ern);
+
+      // new_class has simply name setting logic that doesn't take into account
+      // being not under Object. So we set it again using the smart method.
+      cls->set_name(state, ern, state->symbol(name));
+
       cls->set_const(state, symbol("Errno"), key);
       cls->set_const(state, symbol("Strerror"), String::create(state, strerror(num)));
       state->globals.errno_mapping->store(state, key, cls);
@@ -445,7 +429,6 @@ namespace rubinius {
 #define dexc(name, sup) new_class(#name, sup)
 
     exc = G(exception);
-    dexc(fatal, exc);
     scp = dexc(ScriptError, exc);
     std = dexc(StandardError, exc);
     type = dexc(TypeError, std);

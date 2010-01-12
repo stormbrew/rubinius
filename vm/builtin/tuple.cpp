@@ -150,6 +150,29 @@ namespace rubinius {
     return Fixnum::from(0);
   }
 
+  /** @todo Add some error checking/handling and
+   *  evaluate corner cases, and add tests... --rue
+   */
+  Tuple* Tuple::lshift_inplace(STATE, Fixnum* shift) {
+    std::size_t size = this->num_fields();
+    const int start = shift->to_native();
+
+    if(start > 0) {
+      std::size_t i = 0;
+      std::size_t j = start;
+
+      while(j < size) {
+        this->field[i++] = this->field[j++];
+      }
+
+      while(i < size) {
+        this->field[i++] = Qnil;
+      }
+    }
+
+    return this;
+  }
+
   Object* Tuple::reverse(STATE, Fixnum* o_start, Fixnum* o_total) {
     native_int start = o_start->to_native();
     native_int total = o_total->to_native();

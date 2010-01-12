@@ -64,6 +64,8 @@ module Rubinius
 
       @state = []
       @generators = []
+
+      @stack_locals = 0
     end
 
     attr_reader   :ip, :stream, :iseq, :literals
@@ -122,7 +124,13 @@ module Rubinius
       @iseq = InstructionSequence.from @stream.to_tuple
 
       sdc = calculator.new @iseq, @lines
-      stack_size = sdc.run + @local_count
+      begin
+        stack_size = sdc.run + @local_count
+      rescue Exception => e
+        @iseq.show
+        raise e
+      end
+
       stack_size += 1 if @for_block
       @stack_size = stack_size
 
@@ -147,7 +155,7 @@ module Rubinius
       cm.local_count    = @local_count
       cm.local_names    = @local_names.to_tuple if @local_names
 
-      cm.stack_size     = @stack_size
+      cm.stack_size     = @stack_size + @stack_locals
       cm.file           = @file
       cm.name           = @name
       cm.primitive      = @primitive
@@ -155,6 +163,8 @@ module Rubinius
       cm
     end
 
+    # Replace all Labels in the stream by dereferencing them to their integer
+    # position.
     def set_label_positions
       @stream.each_with_index do |op, index|
         if op.kind_of? Label
@@ -168,6 +178,12 @@ module Rubinius
     end
 
     # Helpers
+
+    def new_stack_local
+      idx = @stack_locals
+      @stack_locals += 1
+      return idx
+    end
 
     def add(instruction, arg1=nil, arg2=nil)
       @stream << InstructionSet[instruction].bytecode
@@ -458,6 +474,10 @@ module Rubinius
       else
         add :send_super_stack_with_block, idx, args
       end
+    end
+
+    def zsuper(meth)
+      add :zsuper, find_literal(meth)
     end
 
     def check_serial(sym, serial)

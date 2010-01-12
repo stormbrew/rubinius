@@ -32,10 +32,10 @@ module Process
     config "rbx.platform.rlimit", :rlim_cur, :rlim_max
   end
 
-  def self.setrlimit(resource, cur_limit, max_limit=Undefined)
+  def self.setrlimit(resource, cur_limit, max_limit=undefined)
     rlimit = Rlimit.new
     rlimit[:rlim_cur] = cur_limit
-    rlimit[:rlim_max] = max_limit.equal?(Undefined) ? cur_limit : max_limit
+    rlimit[:rlim_max] = max_limit.equal?(undefined) ? cur_limit : max_limit
     Errno.handle if -1 == FFI::Platform::POSIX.setrlimit(resource, rlimit.pointer)
     nil
   end
@@ -617,7 +617,7 @@ module Kernel
 
   def exec(cmd, *args)
     if args.empty? and cmd.kind_of? String
-      raise SystemCallError if cmd.empty?
+      raise Errno::ENOENT if cmd.empty?
       if /([*?{}\[\]<>()~&|$;'`"\n\s]|[^\w])/o.match(cmd)
         Process.perform_exec "/bin/sh", ["sh", "-c", cmd]
       else

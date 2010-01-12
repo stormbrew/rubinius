@@ -128,6 +128,37 @@ namespace rubinius {
     GlobalLock::debug_locking = shared.config.gil_debug;
   }
 
+  void VM::initialize_config() {
+#ifdef USE_DYNAMIC_INTERPRETER
+    if(shared.config.dynamic_interpreter_enabled) {
+      G(rubinius)->set_const(this, "INTERPRETER", symbol("dynamic"));
+    } else {
+      G(rubinius)->set_const(this, "INTERPRETER", symbol("static"));
+    }
+#else
+    G(rubinius)->set_const(this, "INTERPRETER", symbol("static"));
+#endif
+
+#ifdef ENABLE_LLVM
+    if(!shared.config.jit_disabled) {
+      Array* ary = Array::create(this, 3);
+      ary->append(this, symbol("usage"));
+      if(shared.config.jit_inline_generic) {
+        ary->append(this, symbol("inline_generic"));
+      }
+
+      if(shared.config.jit_inline_blocks) {
+        ary->append(this, symbol("inline_blocks"));
+      }
+      G(rubinius)->set_const(this, "JIT", ary);
+    } else {
+      G(rubinius)->set_const(this, "JIT", Qfalse);
+    }
+#else
+    G(rubinius)->set_const(this, "JIT", Qnil);
+#endif
+  }
+
   // HACK so not thread safe or anything!
   static VM* __state = NULL;
 
@@ -340,43 +371,6 @@ namespace rubinius {
 
   void VM::print_backtrace() {
     abort();
-  }
-
-  // Trampoline to call scheduler_loop()
-  static void* __thread_tramp__(void* arg) {
-    VM* state = static_cast<VM*>(arg);
-    state->scheduler_loop();
-    return NULL;
-  }
-
-  // Create the preemption thread and call scheduler_loop() in the new thread
-  void VM::setup_preemption() {
-    if(pthread_create(&preemption_thread, NULL, __thread_tramp__, this) != 0) {
-      std::cout << "Unable to create preemption thread!\n";
-    }
-  }
-
-  // Runs forever, telling the VM to reschedule threads ever 10 milliseconds
-  void VM::scheduler_loop() {
-    // First off, we don't want this thread ever receiving a signal.
-    sigset_t mask;
-    sigfillset(&mask);
-    if(pthread_sigmask(SIG_SETMASK, &mask, NULL) != 0) {
-      abort();
-    }
-
-    struct timespec requested;
-    struct timespec actual;
-
-    requested.tv_sec = 0;
-    requested.tv_nsec = 10000000; // 10 milliseconds
-
-    for(;;) {
-      nanosleep(&requested, &actual);
-      if(interrupts.enable_preempt) {
-        interrupts.set_timer();
-      }
-    }
   }
 
   void VM::install_waiter(Waiter& waiter) {

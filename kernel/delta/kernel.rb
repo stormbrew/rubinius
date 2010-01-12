@@ -6,9 +6,9 @@ module Kernel
   # raising forever blows)
   #++
 
-  def raise(exc=Undefined, msg=nil, ctx=nil)
+  def raise(exc=undefined, msg=undefined, ctx=nil)
     skip = false
-    if exc.equal? Undefined
+    if exc.equal? undefined
       exc = $!
       if exc
         skip = true
@@ -16,7 +16,11 @@ module Kernel
         exc = RuntimeError.new("No current exception")
       end
     elsif exc.respond_to? :exception
-      exc = exc.exception msg
+      if msg.equal? undefined
+        exc = exc.exception
+      else
+        exc = exc.exception msg
+      end
       raise ::TypeError, 'exception class/object expected' unless exc.kind_of?(::Exception)
     elsif exc.kind_of? String or !exc
       exc = ::RuntimeError.exception exc
@@ -43,11 +47,24 @@ module Kernel
   module_function :fail
 
   def method_missing(meth, *args)
-    if __kind_of__(Module)
-      Kernel.raise NoMethodError.new("No method '#{meth}' on #{self} (#{self.class})", meth, args)
+    case Rubinius.method_missing_reason
+    when :private
+      msg = "private method '#{meth}'"
+    when :protected
+      msg = "protected method '#{meth}'"
+    when :super
+      msg = "no superclass method '#{meth}'"
     else
-      Kernel.raise NoMethodError.new("No method '#{meth}' on an instance of #{self.class}.", meth, args)
+      msg = "no method '#{meth}'"
     end
+
+    if __kind_of__(Module)
+      msg << " on #{self} (#{self.class})"
+    else
+      msg << " on an instance of #{self.class}."
+    end
+
+    Kernel.raise NoMethodError.new(msg, meth, args)
   end
 
   private :method_missing
@@ -103,4 +120,6 @@ module Kernel
       m.const_defined?(n) ? m.const_get(n) : m.const_missing(n)
     end
   end
+
+  private :const_lookup
 end

@@ -1,2 +1,0 @@
-fails:Kernel#public_method returns a method object for a valid method
-fails:Kernel#public_method returns a method object for a valid singleton method

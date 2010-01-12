@@ -1,12 +1,22 @@
 module Rubinius
 
-  ##
-  # This const controls what the lowest version of compiled methods we can
-  # allow is. This allows us to cut off compability at some point, or just
-  # increment when major changes are made to the compiler.
+  def self.compile_file(file, save=true)
+    cm = Rubinius::CompilerNG.compile_file file, 1
 
-  CompiledMethodVersion = 6
+    if save
+      if file.suffix? ".rb"
+        rbc_path = "#{file}c"
+      else
+        rbc_path = "#{file}.rbc"
+      end
 
+      Rubinius::CompiledFile.dump cm, rbc_path
+    end
+
+    return cm
+  end
+
+  class InvalidRBC < RuntimeError; end
 end
 
 ##
@@ -16,20 +26,27 @@ end
 class Requirer
   # TODO: This is temporary until the compiler is refactored
   def self.version_number
-    42 # No question mark. This is fact.
+    Rubinius::Signature
   end
 
   # TODO: This is temporary until the compiler is refactored
   module Utils
-
-  @load_rbc_directly = false
 
   def self.compiler
     return ::Requirer
   end
 
   def self.version_number
-    return self.compiler ? self.compiler.version_number : 0
+    Rubinius::Signature
+  end
+
+  @load_rbc_directly = false
+  def self.loading_rbc_only(val=true)
+    old = @load_rbc_directly
+    @load_rbc_directly = val
+    yield
+  ensure
+    @load_rbc_directly = old
   end
 
   def self.execute(string)
@@ -50,7 +67,8 @@ class Requirer
 
   def self.load_from_rbc(path, version)
     Ruby.primitive :compiledfile_load
-    raise PrimitiveFailure, "CompiledFile.load_from_rbc primitive failed"
+
+    raise Rubinius::InvalidRBC, path
 
     # HACK: remove the primitive above when compiled_file.rb
     # unmarshal_data method is fixed and ruby performance is better
@@ -163,8 +181,9 @@ class Requirer
         if @load_rbc_directly
 
           if rbc_stat and rbc_stat.file?
+            ver = (@load_rbc_directly == :force ? 0 : version_number)
             compile_feature(rb, requiring) do
-              cm = load_from_rbc(rbc_path, version_number)
+              cm = load_from_rbc(rbc_path, ver)
               raise LoadError, "Invalid .rbc: #{rbc_path}" unless cm
             end
           else
@@ -202,6 +221,11 @@ class Requirer
           compile_feature(rb, requiring) do
             begin
               cm = load_from_rbc(rbc_path, version_number)
+            rescue Rubinius::InvalidRBC
+              if $DEBUG_LOADING
+                STDERR.puts "[Invalid .rbc #{rbc_path} detected, ignoring]"
+              end
+              cm = nil
             rescue TypeError, IOError
               cm = nil
             end
@@ -230,7 +254,7 @@ class Requirer
           cm.hints = { :source => :rb }
           # Set a breakpoint on the script CompiledMethod if flag is set
           if @debug_script
-            Debugger.instance.set_breakpoint cm, 0
+            Rubinius::Debugger.instance.set_breakpoint cm, 0
             @debug_script = false
           end
           cm.as_script do |script|

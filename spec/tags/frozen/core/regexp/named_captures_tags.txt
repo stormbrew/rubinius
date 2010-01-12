@@ -1,3 +1,0 @@
-fails:Regexp#named_captures returns a Hash
-fails:Regexp#named_captures returns an empty Hash when there are no capture groups
-fails:Regexp#named_captures works with duplicate capture group names

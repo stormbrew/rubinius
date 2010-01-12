@@ -385,8 +385,10 @@ describe "An Iter node" do
       top_lbl = d.new_label
       top_lbl.set!
 
+      e_saved = d.save_exception
       d.push_modifiers
-      d.push_exception
+
+      r_saved = d.save_exception
 
       retry_lbl.set!
 
@@ -427,8 +429,8 @@ describe "An Iter node" do
 
       reraise_lbl.set!
       d.clear_exception
-      d.swap
-      d.pop_exception
+
+      d.restore_exception(r_saved)
       d.raise_break
 
       next_lbl.set!
@@ -437,8 +439,8 @@ describe "An Iter node" do
 
       else_lbl.set!
       last_lbl.set!
-      d.swap
-      d.pop_exception
+
+      d.restore_exception r_saved
       d.pop_modifiers
 
       d.pop_unwind
@@ -943,9 +945,8 @@ describe "An Iter node" do
         d.push :self
 
         d.in_block_send :bar, :none do |e|
-          e.push_local_depth 1, 0
           e.push_block
-          e.send_super :x, 1
+          e.zsuper :x
         end
       end
     end

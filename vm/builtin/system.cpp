@@ -33,7 +33,6 @@
 #include "builtin/lookuptable.hpp"
 #include "builtin/symbol.hpp"
 #include "builtin/tuple.hpp"
-#include "builtin/selector.hpp"
 #include "builtin/taskprobe.hpp"
 #include "builtin/float.hpp"
 #include "builtin/methodtable.hpp"
@@ -44,7 +43,6 @@
 #include "builtin/system.hpp"
 #include "signal.hpp"
 #include "lookup_data.hpp"
-#include "builtin/sendsite.hpp"
 
 #include "instruments/stats.hpp"
 
@@ -79,23 +77,24 @@ namespace rubinius {
   //
   // HACK: remove this when performance is better and compiled_file.rb
   // unmarshal_data method works.
-  Object* System::compiledfile_load(STATE, String* path, Object* version) {
+  Object* System::compiledfile_load(STATE, String* path, Integer* version) {
     if(!state->probe->nil_p()) {
       state->probe->load_runtime(state, std::string(path->c_str()));
     }
 
     std::ifstream stream(path->c_str());
     if(!stream) {
-      std::ostringstream msg;
-      msg << "unable to open file to run: " << path->c_str();
-      Exception::io_error(state, msg.str().c_str());
+      return Primitives::failure();
     }
 
     CompiledFile* cf = CompiledFile::load(stream);
     if(cf->magic != "!RBIX") {
-      std::ostringstream msg;
-      msg << "Invalid file: " << path->c_str();
-      Exception::io_error(state, msg.str().c_str());
+      return Primitives::failure();
+    }
+
+    uint64_t ver = version->to_ulong_long();
+    if(ver > 0 && cf->version > 0 && cf->version != ver) {
+      return Primitives::failure();
     }
 
     Object *body = cf->body(state);
@@ -280,7 +279,8 @@ namespace rubinius {
   Object* System::vm_get_config_section(STATE, String* section) {
     ConfigParser::EntryList* list;
 
-    list = state->shared.user_variables.get_section(section->byte_address());
+    list = state->shared.user_variables.get_section(
+        reinterpret_cast<char*>(section->byte_address()));
 
     Array* ary = Array::create(state, list->size());
     for(size_t i = 0; i < list->size(); i++) {
@@ -359,9 +359,7 @@ namespace rubinius {
   }
 
   Object* System::vm_jit_info(STATE) {
-    if(!state->shared.config.jit_enabled) {
-      return Qnil;
-    }
+    if(state->shared.config.jit_disabled) return Qnil;
 
 #ifdef ENABLE_LLVM
     LLVMState* ls = LLVMState::get(state);
@@ -504,18 +502,13 @@ namespace rubinius {
     return module;
   }
 
-  Class* System::vm_open_metaclass(STATE, Object* recv) {
-    // TODO check that recv's metaclass is openable
-    return recv->metaclass(state);
-  }
-
   Tuple* System::vm_find_method(STATE, Object* recv, Symbol* name) {
     LookupData lookup(recv, recv->lookup_begin(state));
     lookup.priv = true;
 
     Dispatch dis(name);
 
-    if(!GlobalCacheResolver::resolve(state, name, dis, lookup)) {
+    if(!GlobalCache::resolve(state, name, dis, lookup)) {
       return (Tuple*)Qnil;
     }
 
@@ -540,6 +533,8 @@ namespace rubinius {
       }
     }
 
+    vm_reset_method_cache(state, name);
+
     return method;
   }
 
@@ -551,11 +546,25 @@ namespace rubinius {
     method->serial(state, Fixnum::from(0));
     mod->add_method(state, name, method);
 
+    vm_reset_method_cache(state, name);
+
     return method;
   }
 
   Class* System::vm_object_class(STATE, Object* obj) {
     return obj->class_object(state);
+  }
+
+  Object* System::vm_object_metaclass(STATE, Object* obj) {
+    if(obj->reference_p()) return obj->metaclass(state);
+    if(obj->true_p()) return G(true_class);
+    if(obj->false_p()) return G(false_class);
+    if(obj->nil_p()) return G(nil_class);
+    return Primitives::failure();
+  }
+
+  Object* System::vm_object_respond_to(STATE, Object* obj, Symbol* name) {
+    return obj->respond_to(state, name, Qfalse);
   }
 
   Object* System::vm_inc_global_serial(STATE) {
@@ -646,5 +655,37 @@ namespace rubinius {
 
     obj->klass(state, cls);
     return obj;
+  }
+
+  Object* System::vm_method_missing_reason(STATE) {
+    switch(state->method_missing_reason()) {
+    case ePrivate:
+      return state->symbol("private");
+    case eProtected:
+      return state->symbol("protected");
+    case eSuper:
+      return state->symbol("super");
+    case eNormal:
+      return state->symbol("normal");
+    default:
+      return state->symbol("none");
+    }
+  }
+
+  Object* System::vm_extended_modules(STATE, Object* obj) {
+    if(MetaClass* mc = try_as<MetaClass>(obj->klass())) {
+      Array* ary = Array::create(state, 3);
+
+      Module* mod = mc->superclass();
+      while(IncludedModule* im = try_as<IncludedModule>(mod)) {
+        ary->append(state, im->module());
+
+        mod = mod->superclass();
+      }
+
+      return ary;
+    }
+
+    return Qnil;
   }
 }

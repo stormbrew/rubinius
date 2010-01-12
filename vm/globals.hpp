@@ -49,7 +49,7 @@ namespace rubinius {
     TypedRoot<Class*> blokctx, cmethod, tuple, module, object, array;
     TypedRoot<Class*> klass, methtbl, bytearray, methctx, blank;
     TypedRoot<Class*> blokenv, bignum, regexp, matchdata;
-    TypedRoot<Class*> string, symbol, io, metaclass;
+    TypedRoot<Class*> string, symbol, io;
     TypedRoot<Class*> nil_class, true_class, false_class, fixnum_class, undef_class;
     TypedRoot<Class*> floatpoint, fastctx, nmc, task, list, list_node;
     TypedRoot<Class*> channel, thread, staticscope, send_site, selector, lookuptable;
@@ -58,7 +58,7 @@ namespace rubinius {
 
     /* the primary symbol table */
     TypedRoot<Symbol*> sym_method_missing;
-    TypedRoot<Symbol*> sym_inherited, sym_opened_class;
+    TypedRoot<Symbol*> sym_inherited;
     TypedRoot<Symbol*> sym_from_literal, sym_method_added, sym_s_method_added, sym_init_copy;
     TypedRoot<Symbol*> sym_plus, sym_minus, sym_equal, sym_nequal, sym_tequal, sym_lt, sym_gt;
     TypedRoot<Symbol*> sym_initialize;
@@ -81,7 +81,7 @@ namespace rubinius {
 
     TypedRoot<Module*> vm;
     TypedRoot<Thread*> current_thread;
-    TypedRoot<Object*> main;
+    TypedRoot<Object*> main, undefined;
     TypedRoot<Class*> dir;
     TypedRoot<Class*> compactlookuptable;
     TypedRoot<Class*> lookuptablebucket;
@@ -133,7 +133,6 @@ namespace rubinius {
       string(&roots),
       symbol(&roots),
       io(&roots),
-      metaclass(&roots),
       nil_class(&roots),
       true_class(&roots),
       false_class(&roots),
@@ -158,7 +157,6 @@ namespace rubinius {
       included_module(&roots),
       sym_method_missing(&roots),
       sym_inherited(&roots),
-      sym_opened_class(&roots),
       sym_from_literal(&roots),
       sym_method_added(&roots),
       sym_s_method_added(&roots),
@@ -197,6 +195,7 @@ namespace rubinius {
       vm(&roots),
       current_thread(&roots),
       main(&roots),
+      undefined(&roots),
       dir(&roots),
       compactlookuptable(&roots),
       lookuptablebucket(&roots),

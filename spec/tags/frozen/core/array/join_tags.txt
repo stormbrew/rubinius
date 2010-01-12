@@ -1,3 +1,0 @@
-fails:Array#join raises an ArgumentError when the Array is recursive
-fails:Array#join does not consider untrustworthiness of either the array or the separator when the array is empty
-fails:Array#join returns a string which would be infected with untrustworthiness of the array, its elements or the separator when the array is not empty

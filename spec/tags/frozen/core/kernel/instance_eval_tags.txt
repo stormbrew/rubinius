@@ -1,2 +1,0 @@
-fails:Kernel#instance_eval doesn't pass the object to the block
-fails:Kernel#instance_eval sets class variables in the receiver

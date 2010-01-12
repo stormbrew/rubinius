@@ -5,6 +5,14 @@
 #     and install the files with the 'install' command
 #
 
+def install_dir(lib)
+  if fr = ENV['FAKEROOT']
+    return File.join(fr, lib)
+  end
+
+  lib
+end
+
 install_dirs = [
   BUILD_CONFIG[:bindir],
   BUILD_CONFIG[:libdir],
@@ -22,7 +30,7 @@ install_dirs = [
 # create A. Otherwise, we can't create A and sudo is required.
 def need_sudo?(dirs)
   dirs.each do |name|
-    dir = File.expand_path name
+    dir = install_dir(File.expand_path(name))
 
     until dir == "/"
       if File.directory? dir
@@ -38,17 +46,19 @@ def need_sudo?(dirs)
 end
 
 def need_install?
-  File.expand_path(Dir.pwd) != BUILD_CONFIG[:libdir]
+  File.expand_path(Dir.pwd) != install_dir(BUILD_CONFIG[:libdir])
 end
 
 def precompile(dir)
-  ruby "-Ilib lib/bin/compile.rb -V -T default #{dir}"
+  (Dir["#{dir}/*.rb"] + Dir["#{dir}/**/*.rb"]).each do |file|
+    Rubinius::CompilerNG.compile file, 1, "#{file}c", [:default]
+  end
 end
 
 def install_file(source, pattern, dest)
   return if File.directory? source
 
-  dest_name = File.join(dest, source.sub(pattern, ""))
+  dest_name = install_dir File.join(dest, source.sub(pattern, ""))
   dir = File.dirname(dest_name)
   mkdir_p dir unless File.directory? dir
 
@@ -77,7 +87,7 @@ namespace :install do
     elsif !need_install?
       puts "Install directory is the same as build directory, nothing to install"
     else
-      install_dirs.each { |name| mkdir_p name, :verbose => $verbose }
+      install_dirs.each { |name| mkdir_p install_dir(name), :verbose => $verbose }
 
       FileList["vm/capi/*.h"].each do |name|
         install_file name, %r[^vm/capi], BUILD_CONFIG[:includedir]
@@ -92,11 +102,9 @@ namespace :install do
         install_file name, /^runtime/, BUILD_CONFIG[:runtime]
       end
 
-      # This is separate from below because it is an open question
-      # whether we should install the .rb files along with the
-      # .rbc files for the standard library. Some libraries,
-      # like IRB, look for a specific .rb file and fail to work
-      # if not finding it.
+      # Install the .rb files for the standard library. This is a
+      # separate block from the .rbc files so that the .rb files
+      # have an older timestamp and do not trigger recompiling.
       FileList['lib/**/*.rb'].each do |name|
         install_file name, /^lib/, BUILD_CONFIG[:lib_path]
       end
@@ -105,27 +113,24 @@ namespace :install do
         install_file name, /^lib/, BUILD_CONFIG[:lib_path]
       end
 
+      # Install the C extensions for the standard library.
       FileList["lib/ext/**/*.#{$dlext}"].each do |name|
         install_file name, %r[^lib/ext], BUILD_CONFIG[:ext_path]
       end
 
-      # TODO: the preinstalled gems are a total mess right now, they
-      # should not be in a source dir that includes any rbx version.
-      # Furthermore, we are going from the source dir here because the
-      # check on 'gems/rubinius' to copy them over will fail on any
-      # repo that used gems before since `gem` created the 'gems/rubinius'
-      # directory.
-      gems_dest = "#{BUILD_CONFIG[:gemsdir]}/rubinius/#{BUILD_CONFIG[:libversion]}"
-      FileList["preinstalled-gems/rubinius/0.13/**/*"].each do |name|
-        install_file name, %r[^preinstalled-gems/rubinius/0.13], gems_dest
+      # Install pre-installed gems
+      gems_dest = "#{BUILD_CONFIG[:gemsdir]}/rubinius/preinstalled"
+      FileList["preinstalled-gems/data/**/*"].each do |name|
+        install_file name, %r[^preinstalled-gems/data], gems_dest
       end
 
       FileList["preinstalled-gems/bin/*"].each do |name|
         install_file name, /^preinstalled-gems/, BUILD_CONFIG[:gemsdir]
       end
 
+      # Install the Rubinius executable
       exe = "#{BUILD_CONFIG[:bindir]}/#{BUILD_CONFIG[:program_name]}"
-      install "vm/vm", exe, :mode => 0755, :verbose => true
+      install "vm/vm", install_dir(exe), :mode => 0755, :verbose => true
     end
   end
 end

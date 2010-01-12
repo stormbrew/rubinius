@@ -94,7 +94,7 @@ public:
 
     TS_ASSERT(kind_of<String>(obj));
     String *str = as<String>(obj);
-    TS_ASSERT_EQUALS(std::string(str->byte_address()), "blah");
+    TS_ASSERT_EQUALS(std::string(str->c_str()), "blah");
   }
 
   void test_symbol() {
@@ -103,15 +103,6 @@ public:
 
     TS_ASSERT(obj->symbol_p());
     TS_ASSERT_EQUALS(obj, state->symbol("blah"));
-  }
-
-  void test_sendsite() {
-    mar->sstream.str(std::string("S\n4\nblah\n"));
-    Object* obj = mar->unmarshal();
-
-    TS_ASSERT(kind_of<SendSite>(obj));
-
-    TS_ASSERT_EQUALS(as<SendSite>(obj)->name(), state->symbol("blah"));
   }
 
   void test_tuple() {

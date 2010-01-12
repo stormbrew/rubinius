@@ -9,7 +9,6 @@
 #include "field_offset.hpp"
 
 #include "call_frame.hpp"
-#include "assembler/jit.hpp"
 #include "configuration.hpp"
 
 #include "instruments/profiler.hpp"
@@ -29,13 +28,22 @@ namespace autogen_types {
   void makeLLVMModuleContents(llvm::Module* module);
 }
 
+#include <iostream>
 #include <sstream>
+#include <fstream>
+#include <iomanip>
+#include <cstdlib>
+#include <dlfcn.h>
 
 #include "llvm/jit_compiler.hpp"
 #include "llvm/jit_method.hpp"
 #include "llvm/jit_block.hpp"
 #include "llvm/passes.hpp"
 #include "instructions_util.hpp"
+
+#include <udis86.h>
+// for abi::__cxa_demangle
+#include <cxxabi.h>
 
 using namespace llvm;
 
@@ -340,8 +348,24 @@ namespace rubinius {
     , shared_(state->shared)
     , include_profiling_(state->shared.config.jit_profile)
     , code_bytes_(0)
+    , log_(0)
     , time_spent(0)
   {
+
+    if(state->shared.config.jit_log.value.size() == 0) {
+      log_ = &std::cerr;
+    } else {
+      std::ofstream* s = new std::ofstream(
+          state->shared.config.jit_log.value.c_str(), std::ios::out);
+
+      if(s->fail()) {
+        delete s;
+        log_ = &std::cerr;
+      } else {
+        log_ = s;
+      }
+    }
+
     llvm::NoFramePointerElim = true;
     llvm::InitializeNativeTarget();
 
@@ -459,7 +483,7 @@ namespace rubinius {
     // Ignore it!
     if(vmm->call_count < 0) {
       if(config().jit_inline_debug) {
-        llvm::errs() << "JIT: ignoring candidate! "
+        log() << "JIT: ignoring candidate! "
           << symbol_cstr(vmm->original->scope()->module()->name())
           << "#"
           << symbol_cstr(vmm->original->name()) << "\n";
@@ -468,7 +492,7 @@ namespace rubinius {
     }
 
     if(config().jit_inline_debug) {
-      llvm::errs() << "JIT: queueing method: "
+      log() << "JIT: queueing method: "
         << symbol_cstr(vmm->original->scope()->module()->name())
         << "#"
         << symbol_cstr(vmm->original->name()) << "\n";
@@ -561,19 +585,19 @@ namespace rubinius {
                                     int primitive) {
     if(config().jit_inline_debug) {
       if(start) {
-        llvm::errs() << "JIT: target search from "
+        log() << "JIT: target search from "
           << symbol_cstr(start->original->scope()->module()->name())
           << "#"
           << symbol_cstr(start->original->name()) << "\n";
       } else {
-        llvm::errs() << "JIT: target search from primitive\n";
+        log() << "JIT: target search from primitive\n";
       }
     }
 
     VMMethod* candidate = find_candidate(start, call_frame);
     if(!candidate) {
       if(config().jit_inline_debug) {
-        llvm::errs() << "JIT: unable to find candidate\n";
+        log() << "JIT: unable to find candidate\n";
       }
       return;
     }
@@ -660,8 +684,51 @@ namespace rubinius {
     return found;
   }
 
-  void LLVMState::show_machine_code(void* impl, size_t bytes) {
-    assembler_x86::AssemblerX86::show_buffer(impl, bytes, false, NULL);
+  void LLVMState::show_machine_code(void* buffer, size_t size) {
+    ud_t ud;
+
+    ud_init(&ud);
+#ifdef IS_X8664
+    ud_set_mode(&ud, 64);
+#else
+    ud_set_mode(&ud, 32);
+#endif
+    ud_set_syntax(&ud, UD_SYN_ATT);
+    ud_set_input_buffer(&ud, reinterpret_cast<uint8_t*>(buffer), size);
+
+    while(ud_disassemble(&ud)) {
+      void* address = reinterpret_cast<void*>(
+          reinterpret_cast<uintptr_t>(buffer) + ud_insn_off(&ud));
+
+      std::cout << std::setw(10) << std::right
+                << address
+                << "  ";
+
+      std::cout << std::setw(24) << std::left << ud_insn_asm(&ud);
+
+      if(ud.operand[0].type == UD_OP_JIMM) {
+        const void* addr = (const void*)((uintptr_t)buffer + ud.pc + (int)ud.operand[0].lval.udword);
+        std::cout << " ; " << addr;
+        if(ud.mnemonic == UD_Icall) {
+          Dl_info info;
+          if(dladdr(addr, &info)) {
+            int status = 0;
+            char* cpp_name = abi::__cxa_demangle(info.dli_sname, 0, 0, &status);
+            if(status >= 0) {
+              // Chop off the arg info from the signature output
+              char *paren = strstr(cpp_name, "(");
+              *paren = 0;
+              std::cout << " " << cpp_name;
+              free(cpp_name);
+            } else {
+              std::cout << " " << info.dli_sname;
+            }
+          }
+        }
+      }
+
+      std::cout << "\n";
+    }
   }
 
 }

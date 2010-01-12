@@ -13,17 +13,6 @@ module Errno
     err = FFI::Platform::POSIX.errno
     return if err == 0
 
-    exc = Errno::Mapping[err]
-    if exc
-      msg = FFI::Platform::POSIX.strerror(err)
-
-      if additional
-        msg << " - " << additional
-      end
-
-      raise exc.new(msg, err)
-    else
-      raise "Unknown error: #{FFI::Platform::POSIX.strerror(err)} (#{err})"
-    end
+    raise SystemCallError.new(additional, err)
   end
 end

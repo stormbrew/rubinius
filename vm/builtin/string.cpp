@@ -49,7 +49,7 @@ namespace rubinius {
 
     size_t bytes = size->to_native() + 1;
     ByteArray* ba = ByteArray::create(state, bytes);
-    ba->bytes[bytes-1] = 0;
+    ba->raw_bytes()[bytes-1] = 0;
 
     so->data(state, ba);
 
@@ -74,7 +74,7 @@ namespace rubinius {
 
     size_t bytes = size->to_native() + 1;
     ByteArray* ba = ByteArray::create_pinned(state, bytes);
-    ba->bytes[bytes-1] = 0;
+    ba->raw_bytes()[bytes-1] = 0;
 
     so->data(state, ba);
 
@@ -98,7 +98,7 @@ namespace rubinius {
   String* String::create(STATE, const char* str, size_t bytes) {
     String* so = String::create(state, Fixnum::from(bytes));
 
-    if(str) std::memcpy(so->data_->bytes, str, bytes);
+    if(str) std::memcpy(so->byte_address(), str, bytes);
 
     return so;
   }
@@ -124,7 +124,7 @@ namespace rubinius {
     if(!hash_value_->nil_p()) {
       return (hashval)as<Integer>(hash_value_)->to_native();
     }
-    bp = (unsigned char*)(data_->bytes);
+    bp = (unsigned char*)(byte_address());
     size_t sz = size();
 
     hashval h = hash_str(bp, sz);
@@ -181,12 +181,8 @@ namespace rubinius {
     return state->symbol(this);
   }
 
-  char* String::byte_address() {
-    return (char*)data_->bytes;
-  }
-
   const char* String::c_str() {
-    char* c_string = (char*)data_->bytes;
+    char* c_string = (char*)byte_address();
     if(c_string[size()] != 0) {
       c_string[size()] = 0;
     }
@@ -234,7 +230,7 @@ namespace rubinius {
   }
 
   String* String::append(STATE, String* other) {
-    return append(state, other->byte_address(), other->size());
+    return append(state, reinterpret_cast<const char*>(other->byte_address()), other->size());
   }
 
   String* String::append(STATE, const char* other) {
@@ -257,17 +253,17 @@ namespace rubinius {
       if(shared_ == Qtrue) shared(state, Qfalse);
 
       ByteArray *ba = ByteArray::create(state, capacity);
-      std::memcpy(ba->bytes, data_->bytes, size());
+      std::memcpy(ba->raw_bytes(), byte_address(), size());
       data(state, ba);
     } else {
       if(shared_ == Qtrue) unshare(state);
     }
 
     // Append on top of the null byte at the end of s1, not after it
-    std::memcpy(data_->bytes + size(), other, length);
+    std::memcpy(byte_address() + size(), other, length);
 
     // The 0-based index of the last character is new_size - 1
-    data_->bytes[new_size] = 0;
+    byte_address()[new_size] = 0;
 
     num_bytes(state, Integer::from(state, new_size));
     hash_value(state, (Integer*)Qnil);
@@ -326,8 +322,8 @@ namespace rubinius {
   // Character-wise logical AND of two strings. Modifies the receiver.
   String* String::apply_and(STATE, String* other) {
     native_int count, i;
-    ByteArray* s = data_;
-    ByteArray* o = other->data();
+    uint8_t* s = byte_address();
+    uint8_t* o = other->byte_address();
 
     if(num_bytes_ > other->num_bytes()) {
       count = other->num_bytes()->to_native();
@@ -337,7 +333,7 @@ namespace rubinius {
 
     // Use && not & to keep 1's in the table.
     for(i = 0; i < count; i++) {
-      s->bytes[i] = s->bytes[i] && o->bytes[i];
+      s[i] = s[i] && o[i];
     }
 
     return this;
@@ -387,7 +383,7 @@ namespace rubinius {
       tr_data.limit = -1;
     }
 
-    unsigned char* str = data_->bytes;
+    uint8_t* str = byte_address();
     native_int bytes = (native_int)this->size();
     native_int start = bytes > 1 && str[0] == '^' ? 1 : 0;
     std::memset(tr_data.set, -1, sizeof(native_int) * 256);
@@ -426,8 +422,8 @@ namespace rubinius {
       shared(state, Qfalse);
     }
 
-    std::memcpy(data_->bytes, tr_data->tr, tr_data->last);
-    data_->bytes[tr_data->last] = 0;
+    std::memcpy(byte_address(), tr_data->tr, tr_data->last);
+    byte_address()[tr_data->last] = 0;
 
     num_bytes(state, Fixnum::from(tr_data->last));
     characters(state, num_bytes_);
@@ -450,7 +446,7 @@ namespace rubinius {
     if(dst < 0) dst = 0;
     if(cnt > sz - dst) cnt = sz - dst;
 
-    std::memcpy(data_->bytes + dst, other->data()->bytes + src, cnt);
+    std::memcpy(byte_address() + dst, other->byte_address() + src, cnt);
 
     return this;
   }
@@ -471,7 +467,7 @@ namespace rubinius {
 
     if(cnt > sz) cnt = sz;
 
-    native_int cmp = std::memcmp(data_->bytes, other->data()->bytes + src, cnt);
+    native_int cmp = std::memcmp(byte_address(), other->byte_address() + src, cnt);
 
     if(cmp < 0) {
       return Fixnum::from(-1);
@@ -491,24 +487,24 @@ namespace rubinius {
     native_int cnt = size->to_native();
 
     if(Fixnum* chr = try_as<Fixnum>(pattern)) {
-      std::memset(s->data()->bytes, (int)chr->to_native(), cnt);
+      std::memset(s->byte_address(), (int)chr->to_native(), cnt);
     } else if(String* pat = try_as<String>(pattern)) {
       pat->infect(state, s);
 
       native_int psz = pat->size();
       if(psz == 1) {
-        std::memset(s->data()->bytes, pat->data()->bytes[0], cnt);
+        std::memset(s->byte_address(), pat->byte_address()[0], cnt);
       } else if(psz > 1) {
         native_int i, j, n;
 
         native_int sz = cnt / psz;
         for(n = i = 0; i < sz; i++) {
           for(j = 0; j < psz; j++, n++) {
-            s->data()->bytes[n] = pat->data()->bytes[j];
+            s->byte_address()[n] = pat->byte_address()[j];
           }
         }
         for(i = n, j = 0; i < cnt; i++, j++) {
-          s->data()->bytes[i] = pat->data()->bytes[j];
+          s->byte_address()[i] = pat->byte_address()[j];
         }
       }
     } else {
@@ -642,9 +638,14 @@ namespace rubinius {
       // If it's an underscore, remember that. An underscore is valid iff
       // it followed by a valid character for this base.
       if(chr == '_') {
-        // Double underscore is forbidden in strict mode.
-        if(underscore && strict == Qtrue) {
-          return (Integer*)Qnil;
+        if(underscore) {
+          // Double underscore is forbidden in strict mode.
+          if(strict == Qtrue) {
+            return (Integer*)Qnil;
+          } else {
+            // Stop parse number after two underscores in a row
+            goto return_value;
+          }
         }
         underscore = true;
         continue;
@@ -715,6 +716,114 @@ return_value:
     if(val->nil_p()) return (Integer*)Primitives::failure();
 
     return val;
+  }
+
+  String* String::substring(STATE, Fixnum* start_f, Fixnum* count_f) {
+    native_int start = start_f->to_native();
+    native_int count = count_f->to_native();
+    native_int total = num_bytes_->to_native();
+
+    if(count < 0) return (String*)Qnil;
+
+    if(start < 0) {
+      start += total;
+      if(start < 0) return (String*)Qnil;
+    }
+
+    if(start > total) return (String*)Qnil;
+
+    if(start + count > total) {
+      count = total - start;
+    }
+
+    if(count < 0) count = 0;
+
+    String* sub = String::create(state, Fixnum::from(count));
+    sub->klass(state, class_object(state));
+
+    uint8_t* buf = byte_address() + start;
+
+    memcpy(sub->byte_address(), buf, count);
+
+    if(tainted_p(state) == Qtrue) sub->taint(state);
+
+    return sub;
+  }
+
+  Fixnum* String::index(STATE, String* pattern, Fixnum* start) {
+    native_int total = size();
+    native_int match_size = pattern->size();
+
+    switch(match_size) {
+    case 0:
+      return start;
+    case 1:
+      {
+        uint8_t* buf = byte_address();
+        uint8_t matcher = pattern->byte_address()[0];
+
+        for(native_int pos = start->to_native(); pos < total; pos++) {
+          if(buf[pos] == matcher) return Fixnum::from(pos);
+        }
+      }
+      return (Fixnum*)Qnil;
+    default:
+      {
+        uint8_t* buf = byte_address();
+        uint8_t* matcher = pattern->byte_address();
+
+        uint8_t* last = buf + (total - match_size);
+        uint8_t* pos = buf + start->to_native();
+
+        while(pos <= last) {
+          if(memcmp(pos, matcher, match_size) == 0) return Fixnum::from(pos - buf);
+          pos++;
+        }
+      }
+      return (Fixnum*)Qnil;
+    }
+  }
+
+  Fixnum* String::rindex(STATE, String* pattern, Fixnum* start) {
+    native_int total = size();
+    native_int match_size = pattern->size();
+    native_int pos = start->to_native();
+
+    if(pos >= total) pos = total - 1;
+
+    switch(match_size) {
+    case 0:
+      return start;
+    case 1:
+      {
+        uint8_t* buf = byte_address();
+        uint8_t matcher = pattern->byte_address()[0];
+
+        while(pos >= 0) {
+          if(buf[pos] == matcher) return Fixnum::from(pos);
+          pos--;
+        }
+      }
+      return (Fixnum*)Qnil;
+    default:
+      {
+        uint8_t* buf = byte_address();
+        uint8_t* matcher = pattern->byte_address();
+
+        if(total - pos < match_size) {
+          pos = total - match_size;
+        }
+
+        uint8_t* right = buf + pos;
+        uint8_t* cur = right;
+
+        while(cur >= buf) {
+          if(memcmp(cur, matcher, match_size) == 0) return Fixnum::from(cur - buf);
+          cur--;
+        }
+      }
+      return (Fixnum*)Qnil;
+    }
   }
 
   void String::Info::show(STATE, Object* self, int level) {

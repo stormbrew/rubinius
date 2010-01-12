@@ -1,1 +1,0 @@
-incomplete:Matrix.column_vector needs to be reviewed for spec completeness

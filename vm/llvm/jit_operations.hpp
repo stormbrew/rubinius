@@ -338,9 +338,13 @@ namespace rubinius {
 
     // Stack manipulations
     //
+    Value* stack_slot_position(int which) {
+      assert(which >= 0 && which < vmmethod()->stack_size);
+      return b().CreateConstGEP1_32(stack_, which, "stack_pos");
+    }
+
     Value* stack_ptr() {
-      assert(sp_ >= 0 && sp_ < vmmethod()->stack_size);
-      return b().CreateConstGEP1_32(stack_, sp_, "stack_pos");
+      return stack_slot_position(sp_);
     }
 
     void set_sp(int sp) {
@@ -462,7 +466,7 @@ namespace rubinius {
           ObjType, "const_obj");
     }
 
-    Value* constant(Object* obj, const Type* type) {
+    Value* constant(void* obj, const Type* type) {
       return b().CreateIntToPtr(
           ConstantInt::get(ls_->IntPtrTy, (intptr_t)obj),
           type, "const_of_type");

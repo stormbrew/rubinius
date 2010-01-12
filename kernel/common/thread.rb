@@ -20,6 +20,15 @@ class Thread
     @abort_on_exception = val
   end
 
+  # It's also an instance method...
+  def abort_on_exception=(val)
+    @abort_on_exception = val
+  end
+
+  def abort_on_exception
+    @abort_on_exception ||= false
+  end
+
   def inspect
     stat = status()
     stat = "dead" unless stat
@@ -70,7 +79,7 @@ class Thread
     end
 
     if @exception
-      if Thread.abort_on_exception
+      if abort_on_exception or Thread.abort_on_exception
         Thread.main.raise @exception
       elsif $DEBUG
         STDERR.puts "Exception in thread: #{@exception.message} (#{@exception.class})"
@@ -148,7 +157,7 @@ class Thread
     @critical = value
   end
 
-  def join(timeout = Undefined)
+  def join(timeout = undefined)
     join_inner(timeout) { @alive ? nil : self }
   end
 
@@ -164,7 +173,7 @@ class Thread
     join_inner { @result }
   end
 
-  def join_inner(timeout = Undefined)
+  def join_inner(timeout = undefined)
     result = nil
     @lock.receive
     begin
@@ -173,7 +182,7 @@ class Thread
         @joins << jc
         @lock.send nil
         begin
-          if timeout.equal? Undefined
+          if timeout.equal? undefined
             jc.receive
           else
             jc.receive_timeout timeout.to_f
@@ -286,12 +295,12 @@ class Thread
     current.recursive_objects[obj.object_id]
   end
 
-  # check_recursion will return if there's a recursion
+  # detect_recursion will return if there's a recursion
   # on obj (or the pair obj+paired_obj).
   # If there is one, it returns true.
   # Otherwise, it will yield once and return false.
-  
-  def self.detect_recursion(obj, paired_obj = Undefined)
+
+  def self.detect_recursion(obj, paired_obj = undefined)
     id = obj.object_id
     pair_id = paired_obj.object_id
     objects = current.recursive_objects
@@ -322,6 +331,22 @@ class Thread
       end
     end
     false
+  end
+
+  # Similar to detect_recursion, but will short circuit all inner recursion
+  # levels (using a throw)
+
+  def self.detect_outermost_recursion(obj, paired_obj=undefined, &block)
+    if Rubinius::ThrownValue.available? :__detect_outermost_recursion__
+      if detect_recursion(obj, paired_obj, &block)
+        throw :__detect_outermost_recursion__, true
+      end
+      false
+    else
+      catch :__detect_outermost_recursion__ do
+        detect_recursion(obj, paired_obj, &block)
+      end
+    end
   end
 
   class Context

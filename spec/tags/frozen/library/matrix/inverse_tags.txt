@@ -1,1 +1,0 @@
-incomplete:Matrix#inverse needs to be reviewed for spec completeness

@@ -59,7 +59,6 @@ module Rubinius
 
         blk.required_args = arguments.required_args
         blk.total_args = arguments.total_args
-        blk.splat_index = arguments.splat_index
 
         blk
       end
@@ -134,22 +133,22 @@ module Rubinius
 
       def initialize(scope)
         @scope = scope
-        @rescue = 0
         @ensure = 0
         @block = 0
         @masgn = 0
+        @rescue = []
       end
 
-      def push_rescue
-        @rescue += 1
+      def push_rescue(val)
+        @rescue.push(val)
       end
 
       def pop_rescue
-        @rescue -= 1 if rescue?
+        @rescue.pop if rescue?
       end
 
       def rescue?
-        @rescue > 0
+        @rescue.last
       end
 
       def push_ensure

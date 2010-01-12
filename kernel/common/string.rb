@@ -30,8 +30,8 @@ class String
     Type.coerce_to(obj, String, :to_str)
   end
 
-  def initialize(arg = Undefined)
-    replace StringValue(arg) unless arg == Undefined
+  def initialize(arg = undefined)
+    replace StringValue(arg) unless arg == undefined
 
     self
   end
@@ -50,7 +50,11 @@ class String
   #   "%05d" % 123                       #=> "00123"
   #   "%-5s: %08x" % [ "ID", self.id ]   #=> "ID   : 200e14d6"
   def %(args)
-    Rubinius::Sprintf.new(self, *args).parse
+    if args.is_a? String    # Fixes "%s" % ""
+      Rubinius::Sprintf.new(self, args).parse
+    else
+      Rubinius::Sprintf.new(self, *args).parse
+    end
   end
 
   # call-seq:
@@ -225,8 +229,8 @@ class String
   #    a[/[aeiou](.)\1/, 2]   #=> nil
   #    a["lo"]                #=> "lo"
   #    a["bye"]               #=> nil
-  def [](index, other = Undefined)
-    unless other.equal?(Undefined)
+  def [](index, other = undefined)
+    unless other.equal?(undefined)
       length = Type.coerce_to(other, Fixnum, :to_int)
 
       if index.kind_of? Regexp
@@ -717,7 +721,7 @@ class String
 
     sep = StringValue sep
 
-    id = @data.object_id
+    orig = @data
     size = @num_bytes
     ssize = sep.size
     newline = ssize == 0 ? ?\n : sep[ssize-1]
@@ -737,7 +741,10 @@ class String
         line = substring last, i-last
         line.taint if tainted?
         yield line
-        modified? id, size
+
+        unless orig.equal?(@data)
+          raise RuntimeError, "string has been modified"
+        end
         last = i
       end
 
@@ -805,12 +812,12 @@ class String
   #   "hello".gsub(/[aeiou]/, '*')              #=> "h*ll*"
   #   "hello".gsub(/([aeiou])/, '<\1>')         #=> "h<e>ll<o>"
   #   "hello".gsub(/./) {|s| s[0].to_s + ' '}   #=> "104 101 108 108 111 "
-  def gsub(pattern, replacement = Undefined, &prc)
-    return to_enum :gsub, pattern, replacement unless block_given? || replacement != Undefined
+  def gsub(pattern, replacement = undefined, &prc)
+    return to_enum :gsub, pattern, replacement unless block_given? || replacement != undefined
 
     tainted = false
 
-    unless replacement == Undefined
+    unless replacement == undefined
       tainted = replacement.tainted?
       replacement = StringValue(replacement)
       tainted ||= replacement.tainted?
@@ -831,7 +838,7 @@ class String
     while match do
       ret << (match.pre_match_from(last_end) || "")
 
-      unless replacement == Undefined
+      unless replacement == undefined
         ret << replacement.to_sub_replacement(match)
       else
         # We do this so that we always manipulate $~ in the context
@@ -870,7 +877,7 @@ class String
 
   # Performs the substitutions of <code>String#gsub</code> in place, returning
   # <i>self</i>, or <code>nil</code> if no substitutions were performed.
-  def gsub!(pattern, replacement = Undefined, &block)
+  def gsub!(pattern, replacement = undefined, &block)
     str = gsub(pattern, replacement, &block)
 
     if lm = $~
@@ -984,6 +991,8 @@ class String
     if index > @num_bytes or index < 0 then
       raise IndexError, "index #{index} out of string"
     end
+
+    modify!
 
     if index == 0
       str.copy_from other, 0, other.size, 0
@@ -1128,6 +1137,7 @@ class String
     @data = other.data
     @num_bytes = other.num_bytes
     @characters = other.characters
+    @hash_value = nil
 
     self.taint if other.tainted?
 
@@ -1169,28 +1179,50 @@ class String
   #   "hello".rindex('a')             #=> nil
   #   "hello".rindex(101)             #=> 1
   #   "hello".rindex(/[aeiou]/, -2)   #=> 1
-  def rindex(arg, finish = Undefined)
-    arg = StringValue(arg) unless [Fixnum, String, Regexp].include?(arg.class)
-    original_klass = arg.class
-    if !finish.equal?(Undefined)
+  def rindex(sub, finish=undefined)
+    if finish.equal?(undefined)
+      finish = size
+    else
       finish = Type.coerce_to(finish, Integer, :to_int)
       finish += @num_bytes if finish < 0
       return nil if finish < 0
       finish = @num_bytes if finish >= @num_bytes
-    else
-      finish = size
-    end
-    case arg
-    when Fixnum
-      return nil if arg > 255 || arg < 0
-      arg = Regexp.new(Regexp.quote(arg.chr))
-    when String
-      arg = Regexp.new(Regexp.quote(arg))
     end
 
-    ret = arg.search_region(self, 0, finish, false)
-    Rubinius::VariableScope.of_sender.last_match = ret if original_klass == Regexp
-    ret && ret.begin(0)
+    case sub
+    when Fixnum
+      if finish == size
+        return nil if finish == 0
+        finish -= 1
+      end
+
+      begin
+        str = sub.chr
+      rescue RangeError
+        return nil
+      end
+
+      return find_string_reverse(str, finish)
+
+    when Regexp
+      ret = sub.search_region(self, 0, finish, false)
+      Rubinius::VariableScope.of_sender.last_match = ret
+      return ret.begin(0) if ret
+
+    else
+      needle = StringValue(sub)
+      needle_size = needle.size
+
+      # needle is bigger that haystack
+      return nil if size < needle_size
+
+      # Boundary case
+      return finish if needle_size == 0
+
+      return find_string_reverse(needle, finish)
+    end
+
+    return nil
   end
 
   def rpartition(pattern)
@@ -1365,12 +1397,12 @@ class String
   #   "1,2,,3,4,,".split(',')         #=> ["1", "2", "", "3", "4"]
   #   "1,2,,3,4,,".split(',', 4)      #=> ["1", "2", "", "3,4,,"]
   #   "1,2,,3,4,,".split(',', -4)     #=> ["1", "2", "", "3", "4", "", ""]
-  def split(pattern = nil, limit = Undefined)
+  def split(pattern = nil, limit = undefined)
 
     # Odd edge case
     return [] if empty?
 
-    if limit == Undefined
+    if limit == undefined
       limited = false
     else
       limit = Type.coerce_to limit, Fixnum, :to_int
@@ -1394,6 +1426,15 @@ class String
       # Pass
     else
       pattern = StringValue(pattern) unless pattern.kind_of?(String)
+
+      if !limited and limit.equal? undefined
+        if pattern.empty?
+          return pull_apart
+        else
+          return split_on_string(pattern)
+        end
+      end
+
       pattern = Regexp.new(Regexp.quote(pattern))
     end
 
@@ -1430,7 +1471,7 @@ class String
     end
 
     # Trim from end
-    if !ret.empty? and (limit == Undefined || limit == 0)
+    if !ret.empty? and (limit == undefined || limit == 0)
       while s = ret.last and s.empty?
         ret.pop
       end
@@ -1442,6 +1483,44 @@ class String
         ret.shift
       end
     end
+
+    ret
+  end
+
+  def pull_apart
+    ret = []
+    pos = 0
+
+    while pos < @num_bytes
+      ret << substring(pos, 1)
+      pos += 1
+    end
+
+    ret
+  end
+  private :pull_apart
+
+  def split_on_string(pattern)
+    pos = 0
+
+    ret = []
+
+    pat_size = pattern.size
+
+    while pos < @num_bytes
+      nxt = find_string(pattern, pos)
+      break unless nxt
+
+      match_size = nxt - pos
+      ret << substring(pos, match_size)
+
+      pos = nxt + pat_size
+    end
+
+    # No more seperates, but we need to grab the last part still.
+    ret << substring(pos, @num_bytes - pos)
+
+    ret.pop while !ret.empty? and ret.last.empty?
 
     ret
   end
@@ -1532,16 +1611,21 @@ class String
   #   "hello".sub(/[aeiou]/, '*')               #=> "h*llo"
   #   "hello".sub(/([aeiou])/, '<\1>')          #=> "h<e>llo"
   #   "hello".sub(/./) {|s| s[0].to_s + ' ' }   #=> "104 ello"
-  def sub(pattern, replacement = Undefined, &prc)
-    raise ArgumentError, "wrong number of arguments (1 for 2)" if replacement == Undefined && !block_given?
-    raise ArgumentError, "wrong number of arguments (0 for 2)" if pattern.nil?
+  def sub(pattern, replacement = undefined, &prc)
+    if replacement.equal?(undefined) and !block_given?
+      raise ArgumentError, "wrong number of arguments (1 for 2)"
+    end
+
+    unless pattern
+      raise ArgumentError, "wrong number of arguments (0 for 2)"
+    end
 
     if match = get_pattern(pattern, true).match_from(self, 0)
       out = match.pre_match
 
       Rubinius::VariableScope.of_sender.last_match = match
 
-      unless replacement == Undefined
+      unless replacement == undefined
         out.taint if replacement.tainted?
         replacement = StringValue(replacement).to_sub_replacement(match)
       else
@@ -1575,7 +1659,7 @@ class String
   # Performs the substitutions of <code>String#sub</code> in place,
   # returning <i>self</i>, or <code>nil</code> if no substitutions were
   # performed.
-  def sub!(pattern, replacement = Undefined, &prc)
+  def sub!(pattern, replacement = undefined, &prc)
     if block_given?
       orig = self.dup
       str = sub(pattern, replacement, &prc)
@@ -2131,14 +2215,6 @@ class String
     end
 
     @hash_value = nil # reset the hash value
-  end
-
-  # Raises RuntimeError if either the ByteArray object_id
-  # or the size has changed.
-  def modified?(id, size)
-    if id != @data.object_id or size != @num_bytes
-      raise RuntimeError, "string has been modified"
-    end
   end
 
   def subpattern(pattern, capture)

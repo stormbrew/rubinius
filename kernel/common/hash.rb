@@ -133,8 +133,6 @@ class Hash
 
     return false unless other.size == size
 
-    # Pickaxe claims that defaults are compared, but MRI 1.8.[46] doesn't actually do that
-    # return false unless other.default == default
     Thread.detect_recursion self, other do
       i = to_iter
       while entry = i.next(entry)
@@ -148,7 +146,7 @@ class Hash
 
   def hash
     val = size
-    Thread.detect_recursion self do
+    Thread.detect_outermost_recursion self do
       i = to_iter
       while entry = i.next(entry)
         val ^= entry.key.hash
@@ -204,11 +202,11 @@ class Hash
     self
   end
 
-  def default(key = Undefined)
+  def default(key = undefined)
     # current MRI documentation comment is wrong.  Actual behavior is:
     # Hash.new { 1 }.default # => nil
     if @default_proc
-      key.equal?(Undefined) ? nil : @default.call(self, key)
+      key.equal?(undefined) ? nil : @default.call(self, key)
     else
       @default
     end
@@ -313,13 +311,13 @@ class Hash
     @size == 0
   end
 
-  def fetch(key, default = Undefined)
+  def fetch(key, default = undefined)
     if entry = find_entry(key)
       return entry.value
     end
 
     return yield(key) if block_given?
-    return default unless default.equal?(Undefined)
+    return default unless default.equal?(undefined)
     raise IndexError, 'key not found'
   end
 
@@ -347,15 +345,15 @@ class Hash
   end
   alias_method :key, :index
 
-  def initialize(default = Undefined, &block)
-    if !default.equal?(Undefined) and block
+  def initialize(default = undefined, &block)
+    if !default.equal?(undefined) and block
       raise ArgumentError, "Specify a default or a block, not both"
     end
 
     if block
       @default = block
       @default_proc = true
-    elsif !default.equal?(Undefined)
+    elsif !default.equal?(undefined)
       @default = default
       @default_proc = false
     end

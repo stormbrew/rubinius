@@ -14,6 +14,21 @@ module Rubinius
     raise PrimitiveFailure, "Rubinius.object_class failed"
   end
 
+  def self.object_metaclass(obj)
+    Ruby.primitive :vm_object_metaclass
+    raise TypeError, "no metaclass available for a #{obj.class}"
+  end
+
+  def self.object_respond_to?(obj, name)
+    Ruby.primitive :vm_object_respond_to
+    raise PrimitiveFailure, "Rubinius.object_respond_to? failed"
+  end
+
+  def self.extended_modules(obj)
+    Ruby.primitive :vm_extended_modules
+    raise PrimitiveFailure, "Rubinius.extended_modules failed"
+  end
+
   def self.inc_global_serial
     Ruby.primitive :vm_inc_global_serial
     raise PrimitiveFailure, "Rubinius.vm_inc_global_serial failed"
@@ -47,6 +62,11 @@ module Rubinius
   def self.catch(dest, obj)
     Ruby.primitive :vm_catch
     raise PrimitiveFailure, "Rubinius.catch failed"
+  end
+
+  def self.method_missing_reason
+    Ruby.primitive :vm_method_missing_reason
+    :unknown
   end
 
   module Unsafe

@@ -79,12 +79,12 @@ module Rubinius
 
     mod = static_scope.for_method_definition
 
-    if mod.kind_of? MetaClass
-      if mod.attached_instance.kind_of? Numeric
+    if mod.kind_of? Class and ai = mod.__metaclass_object__
+      if ai.kind_of? Numeric
 
         # Such a weird protocol. If :singleton_method_added exists, allow this.
         # le sigh.
-        unless mod.attached_instance.respond_to? :singleton_method_added
+        unless ai.respond_to? :singleton_method_added
           raise TypeError, "Unable to define singleton methods on Numerics"
         end
       end
@@ -110,10 +110,37 @@ module Rubinius
     Rubinius::VM.reset_method_cache(name)
 
     mod.module_function name if vis == :module
-    mod.method_added name if mod.respond_to? :method_added
+
+    # Have to use Rubinius.object_respond_to? rather than #respond_to?
+    # because code will redefine #respond_to? itself, which is added
+    # via #add_method, and then we'll call this new #respond_to?, which
+    # commonly can't run yet because it requires methods that haven't been
+    # added yet. (ActionMailer does this)
+
+    if mod.kind_of? Class and obj = mod.__metaclass_object__
+      if Rubinius.object_respond_to? obj, :singleton_method_added
+        obj.singleton_method_added(name)
+      end
+    else
+      if Rubinius.object_respond_to? mod, :method_added
+        mod.method_added(name)
+      end
+    end
 
     return executable
   end
+
+  # Must be AFTER add_method, because otherwise we'll run this attach_method to add
+  # add_method itself and fail.
+  def self.attach_method(name, executable, static_scope, recv)
+    executable.serial = 1
+    executable.scope = static_scope if executable.respond_to? :scope=
+
+    mod = Rubinius.object_metaclass recv
+
+    add_method name, executable, mod, :public
+  end
+
 
   def self.add_reader(name, mod, vis)
     normalized = Type.coerce_to_symbol(name)

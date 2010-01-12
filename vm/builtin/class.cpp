@@ -44,8 +44,8 @@ namespace rubinius {
 
     System::attach_primitive(state,
                              G(rubinius), true,
-                             state->symbol("open_metaclass"),
-                             state->symbol("vm_open_metaclass"));
+                             state->symbol("object_metaclass"),
+                             state->symbol("vm_object_metaclass"));
 
     System::attach_primitive(state,
                              G(rubinius), true,
@@ -56,11 +56,6 @@ namespace rubinius {
                              G(rubinius), true,
                              state->symbol("attach_method"),
                              state->symbol("vm_attach_method"));
-
-    System::attach_primitive(state,
-                             G(metaclass), false,
-                             state->symbol("attach_method"),
-                             state->symbol("metaclass_attach_method"));
   }
 
   Class* Class::create(STATE, Class* super) {
@@ -140,6 +135,8 @@ namespace rubinius {
     packed_ivar_info(state, sup->packed_ivar_info());
     set_packed_size(sup->packed_size());
 
+    MetaClass::attach(state, this, sup->metaclass(state));
+
     return Qnil;
   }
 
@@ -171,40 +168,63 @@ namespace rubinius {
     return Qtrue;
   }
 
-  MetaClass* MetaClass::attach(STATE, Object* obj, Object* sup) {
-    MetaClass *meta;
+  Class* Class::real_class(STATE, Class* klass) {
+    if(MetaClass* mc = try_as<MetaClass>(klass)) {
+      return mc->true_superclass(state);
+    } else {
+      return klass;
+    }
+  }
 
-    meta = state->om->new_object_enduring<MetaClass>(G(metaclass));
+  MetaClass* MetaClass::attach(STATE, Object* obj, Class* sup) {
+    MetaClass *meta;
+    meta = state->om->new_object_enduring<MetaClass>(G(klass));
     meta->set_class_id(state->shared.inc_class_count());
 
-    if(!sup) { sup = obj->klass(); }
     meta->attached_instance(state, obj);
     meta->setup(state);
-    meta->superclass(state, (Module*)sup);
     meta->set_type_info(obj->klass()->type_info());
 
     meta->set_packed_size(obj->klass()->packed_size());
     meta->packed_ivar_info(state, obj->klass()->packed_ivar_info());
 
-    obj->klass(state, meta);
+    /* The superclass hierarchy for metaclasses lives in parallel to that of classes.
+     * This code ensures that the superclasses of metaclasses are also metaclasses.
+     */
+    if(MetaClass* already_meta = try_as<MetaClass>(obj)) {
+      /* If we are attaching a metaclass to something that is already a MetaClass,
+       * make the metaclass's superclass be the attachee's superclass.
+       * klass and superclass are both metaclasses in this case.
+       */
+      meta->klass(state, meta);
+      meta->superclass(state, already_meta->true_superclass(state)->metaclass(state));
+    } else {
+      /* If we are attaching to anything but a MetaClass, the new
+       * metaclass's class is the same as its superclass.
+       * This is where the superclass chains for meta/non-meta classes diverge.
+       * If no superclass argument was provided, we use the klass we are replacing.
+       */
+      if(!sup) { sup = obj->klass(); }
+      /* Tell the new MetaClass about the attachee's existing hierarchy */
+      Class* meta_klass = Class::real_class(state, sup)->klass();
+      meta->klass(state, meta_klass);
+      meta->superclass(state, sup);
+    }
 
     meta->name(state, state->symbol("<metaclass>"));
 
-    /** @todo   These fields from Class are not set. Need to? --rue
-    Fixnum* instance_type_;   // slot
-    */
+    /* Finally, attach the new MetaClass */
+    obj->klass(state, meta);
 
     return meta;
   }
 
-  Object* MetaClass::attach_method(STATE, Symbol* name,
-                                   CompiledMethod* method, StaticScope* scope)
-  {
-    method->scope(state, scope);
-    method->serial(state, Fixnum::from(0));
-    add_method(state, name, method);
+  Object* Class::get_metaclass_attached(STATE) {
+    if(MetaClass* mc = try_as<MetaClass>(this)) {
+      return mc->attached_instance();
+    }
 
-    return method;
+    return Qnil;
   }
 
   void MetaClass::Info::show(STATE, Object* self, int level) {
@@ -219,7 +239,7 @@ namespace rubinius {
       name = "<some object>";
     }
 
-    std::cout << "#<" << self->class_object(state)->name()->c_str(state) <<
+    std::cout << "#<MetaClass:" << self->class_object(state)->name()->c_str(state) <<
       " " << name << ":" << (void*)self << ">" << std::endl;
   }
 }

@@ -6,7 +6,6 @@
 #include "builtin/compiledmethod.hpp"
 #include "builtin/exception.hpp"
 #include "builtin/fixnum.hpp"
-#include "builtin/sendsite.hpp"
 #include "builtin/string.hpp"
 #include "builtin/symbol.hpp"
 #include "builtin/taskprobe.hpp"
@@ -52,6 +51,8 @@ using namespace rubinius;
 
 #define stack_position(where) (STACK_PTR = call_frame->stk + where)
 #define stack_calculate_sp() (STACK_PTR - call_frame->stk)
+
+#define stack_local(which) call_frame->stk[vmm->stack_size - which - 1]
 
 #define next_int ((opcode)(stream[call_frame->inc_ip()]))
 
@@ -99,7 +100,7 @@ Object* VMMethod::interpreter(STATE,
 
   InterpreterState is;
 
-#ifdef __i386__
+#ifdef X86_ESI_SPEEDUP
   register void** ip_ptr asm ("esi") = vmm->addresses;
 #else
   register void** ip_ptr = vmm->addresses;

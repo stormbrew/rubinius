@@ -76,6 +76,10 @@ namespace rubinius {
     {}
   };
 
+  enum MethodMissingReason {
+    eNone, ePrivate, eProtected, eSuper, eNormal
+  };
+
   class VM {
 
   private:
@@ -85,6 +89,8 @@ namespace rubinius {
     bool alive_;
     profiler::Profiler* profiler_;
     bool run_signals_;
+
+    MethodMissingReason method_missing_reason_;
 
   public:
     /* Data members */
@@ -114,9 +120,6 @@ namespace rubinius {
     ObjectMark* current_mark;
 
     bool reuse_llvm;
-
-    // The thread used to trigger preemptive thread switching
-    pthread_t preemption_thread;
 
     static int cStackDepthMax;
 
@@ -183,6 +186,27 @@ namespace rubinius {
       return true;
     }
 
+    MethodMissingReason method_missing_reason() {
+      return method_missing_reason_;
+    }
+
+    void set_method_missing_reason(MethodMissingReason reason) {
+      method_missing_reason_ = reason;
+    }
+
+  public:
+    static void init_stack_size();
+
+    // Returns the current VM state object.
+    static VM* current_state();
+
+    // Registers a VM* object as the current state.
+    static void register_state(VM*);
+
+    static void discard(VM*);
+
+  public:
+
     /* Prototypes */
     VM(SharedState& shared);
 
@@ -193,17 +217,10 @@ namespace rubinius {
     // Initialize the basic objects and the execution machinery
     void boot();
 
-    // Returns the current VM state object.
-    static VM* current_state();
-
-    // Registers a VM* object as the current state.
-    static void register_state(VM*);
-
-    static void discard(VM*);
-
     void bootstrap_class();
     void bootstrap_ontology();
     void bootstrap_symbol();
+    void initialize_config();
 
     void setup_errno(int num, const char* name, Class* sce, Module* ern);
     void bootstrap_exceptions();
@@ -213,7 +230,6 @@ namespace rubinius {
     void boot_threads();
 
     void raise_stack_error(CallFrame* call_frame);
-    void init_stack_size();
 
     Object* new_object_typed(Class* cls, size_t bytes, object_type type);
     Object* new_object_typed_mature(Class* cls, size_t bytes, object_type type);
@@ -282,11 +298,6 @@ namespace rubinius {
 
     void print_backtrace();
 
-    void setup_preemption();
-
-    // Run in a seperate thread to provide preemptive thread
-    // scheduling.
-    void scheduler_loop();
 
     // Run the garbage collectors as soon as you can
     void run_gc_soon();

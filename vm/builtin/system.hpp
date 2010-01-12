@@ -34,7 +34,7 @@ namespace rubinius {
 
     /** Load a compiled file. */
     // Ruby.primitive :compiledfile_load
-    static Object*  compiledfile_load(STATE, String* path, Object* version);
+    static Object*  compiledfile_load(STATE, String* path, Integer* version);
 
     /**
      *  When running under GDB, stop here.
@@ -179,9 +179,6 @@ namespace rubinius {
     // Ruby.primitive :vm_open_module_under
     static Module* vm_open_module_under(STATE, Symbol* name, Module* under);
 
-    // Ruby.primitive :vm_open_metaclass
-    static Class* vm_open_metaclass(STATE, Object* recv);
-
     // Ruby.primitive :vm_find_method
     static Tuple* vm_find_method(STATE, Object* recv, Symbol* name);
 
@@ -194,6 +191,15 @@ namespace rubinius {
     // A robust way to get the class of an object, since Object#class can be redefined.
     // Ruby.primitive :vm_object_class
     static Class* vm_object_class(STATE, Object* obj);
+
+    // A robust way to get the metaclass of an object.
+    // Ruby.primitive :vm_object_metaclass
+    static Object* vm_object_metaclass(STATE, Object* obj);
+
+    // A robust way to find out if an object responds to a method, since #respond_to?
+    // can be redefined.
+    // Ruby.primitive :vm_object_respond_to
+    static Object* vm_object_respond_to(STATE, Object* obj, Symbol* sym);
 
     // Increment the internal global serial number, used for caching
     // Ruby.primitive :vm_inc_global_serial
@@ -222,6 +228,12 @@ namespace rubinius {
 
     // Ruby.primitive :vm_set_class
     static Object* vm_set_class(STATE, Object* obj, Class* cls);
+
+    // Ruby.primitive :vm_method_missing_reason
+    static Object* vm_method_missing_reason(STATE);
+
+    // Ruby.primitive :vm_extended_modules
+    static Object* vm_extended_modules(STATE, Object* obj);
 
   public:   /* Type info */
 

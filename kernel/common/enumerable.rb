@@ -67,9 +67,9 @@ module Enumerable
     def quicksort(xs, &prc)
       return [] unless xs
 
-      pivot = Undefined
+      pivot = undefined
       xs.each { |o| pivot = o; break }
-      return xs if pivot.equal? Undefined
+      return xs if pivot.equal? undefined
 
       lmr = Hash.new { |hash, key|
         # if ever the result of the block is not simply -1, 0 or 1, compare it with 0
@@ -229,21 +229,21 @@ module Enumerable
   # If you do not explicitly specify an initial value for memo,
   # then uses the first element of collection is used as the initial value of memo.
 
-  def inject(initial=Undefined, sym=Undefined, &block)
-    unless block_given? && sym.equal?(Undefined)
-      initial, sym = Undefined, initial if sym.equal?(Undefined)
+  def inject(initial=undefined, sym=undefined, &block)
+    unless block_given? && sym.equal?(undefined)
+      initial, sym = undefined, initial if sym.equal?(undefined)
       block = Proc.new{ |memo, obj| memo.send(sym, obj) }
     end
 
     each do |o|
-      if initial.equal? Undefined
+      if initial.equal? undefined
         initial = o
       else
         initial = block.call(initial, o)
       end
     end
 
-    initial.equal?(Undefined) ? nil : initial
+    initial.equal?(undefined) ? nil : initial
   end
   alias_method :reduce, :inject
 
@@ -434,9 +434,9 @@ module Enumerable
   #   ary.count(2)          # => 2
   #   ary.count{ |x|x%2==0}  # => 3
 
-  def count(item = Undefined)
+  def count(item = undefined)
     seq = 0
-    if ! item.equal? Undefined
+    if ! item.equal? undefined
       each { |o| seq += 1 if item == o }
     elsif block_given?
       each { |o| seq += 1 if yield(o) }
@@ -655,8 +655,8 @@ module Enumerable
   # Compares each entry in enum with value or passes to block.
   # Returns the index for the first for which the evaluated value is non-false. If no object matches, returns nil
 
-  def find_index(value = Undefined)
-    if value.equal? Undefined
+  def find_index(value = undefined)
+    if value.equal? undefined
       return to_enum :find_index unless block_given?
       each_with_index do |element, i|
         return i if yield element
@@ -678,8 +678,8 @@ module Enumerable
   # If the enumerable is empty, the first form returns nil, and the second
   # form returns an empty array.
 
-  def first(n = Undefined)
-    return take(n) unless n.equal?(Undefined)
+  def first(n = undefined)
+    return take(n) unless n.equal?(undefined)
     each{|obj| return obj}
     nil
   end
@@ -738,9 +738,9 @@ module Enumerable
   #   a.min { |a,b| a.length <=> b.length }   #=> "dog"
 
   def min
-    min = Undefined
+    min = undefined
     each do |o|
-      if min.equal? Undefined
+      if min.equal? undefined
         min = o
       else
         comp = block_given? ? yield(o, min) : o <=> min
@@ -752,7 +752,7 @@ module Enumerable
       end
     end
 
-    min.equal?(Undefined) ? nil : min
+    min.equal?(undefined) ? nil : min
   end
 
   ##
@@ -769,9 +769,9 @@ module Enumerable
   #    a.max { |a,b| a.length <=> b.length }   #=> "albatross"
 
   def max
-    max = Undefined
+    max = undefined
     each do |o|
-      if max.equal? Undefined
+      if max.equal? undefined
         max = o
       else
         comp = block_given? ? yield(o, max) : o <=> max
@@ -783,7 +783,7 @@ module Enumerable
       end
     end
 
-    max.equal?(Undefined) ? nil : max
+    max.equal?(undefined) ? nil : max
   end
 
   ##
@@ -804,7 +804,10 @@ module Enumerable
     max_object, max_result = nil, Rubinius::FakeComparator.new(-1)
     each do |object|
       result = yield object
-      max_object, max_result = object, result if Type.coerce_to_comparison(max_result, result) < 0
+
+      if Type.coerce_to_comparison(max_result, result) < 0
+        max_object, max_result = object, result
+      end
     end
     max_object
   end
@@ -827,7 +830,10 @@ module Enumerable
     min_object, min_result = nil, Rubinius::FakeComparator.new(1)
     each do |object|
       result = yield object
-      min_object, min_result = object, result if Type.coerce_to_comparison(min_result, result) > 0
+
+      if Type.coerce_to_comparison(min_result, result) > 0
+        min_object, min_result = object, result
+      end
     end
     min_object
   end
@@ -837,16 +843,25 @@ module Enumerable
   # the second uses the block to return a <=> b.
 
   def minmax(&block)
-    block = Proc.new{|a,b| a <=> b} unless block_given?
+    block = Sort.sort_proc unless block
     first_time = true
     min, max = nil
+
     each do |object|
       if first_time
         min = max = object
         first_time = false
       else
-        min = object if Type.coerce_to_comparison(min, object, block.call(min, object)) > 0
-        max = object if Type.coerce_to_comparison(max, object, block.call(max, object)) < 0
+        unless min_cmp = block.call(min, object)
+          raise ArgumentError, "comparison failed"
+        end
+        min = object if min_cmp > 0
+
+        unless max_cmp = block.call(max, object)
+          raise ArgumentError, "comparison failed"
+        end
+
+        max = object if max_cmp < 0
       end
     end
     [min, max]
@@ -861,8 +876,13 @@ module Enumerable
     max_object, max_result = nil, Rubinius::FakeComparator.new(-1)
     each do |object|
       result = yield object
-      min_object, min_result = object, result if Type.coerce_to_comparison(min_result, result) > 0
-      max_object, max_result = object, result if Type.coerce_to_comparison(max_result, result) < 0
+      if Type.coerce_to_comparison(min_result, result) > 0
+        min_object, min_result = object, result
+      end
+
+      if Type.coerce_to_comparison(max_result, result) < 0
+        max_object, max_result = object, result
+      end
     end
     [min_object, max_object]
   end

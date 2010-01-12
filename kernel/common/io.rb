@@ -409,9 +409,9 @@ class IO
   #  IO.read("testfile")           #=> "This is line one\nThis is line two\nThis is line three\nAnd so on...\n"
   #  IO.read("testfile", 20)       #=> "This is line one\nThi"
   #  IO.read("testfile", 20, 10)   #=> "ne one\nThis is line "
-  def self.read(name, length = Undefined, offset = 0)
+  def self.read(name, length = undefined, offset = 0)
     name = StringValue(name)
-    length ||= Undefined
+    length ||= undefined
     offset ||= 0
 
     offset = Type.coerce_to(offset, Fixnum, :to_int)
@@ -420,7 +420,7 @@ class IO
       raise Errno::EINVAL, "offset must not be negative"
     end
 
-    unless length.equal?(Undefined)
+    unless length.equal?(undefined)
       length = Type.coerce_to(length, Fixnum, :to_int)
 
       if length < 0
@@ -431,7 +431,7 @@ class IO
     File.open(name) do |f|
       f.seek(offset) unless offset.zero?
 
-      if length.equal?(Undefined)
+      if length.equal?(undefined)
         f.read
       else
         f.read(length)
@@ -492,27 +492,30 @@ class IO
     end
 
     if readables
-      readables = Type.coerce_to(readables, Array, :to_ary).map {|obj|
-                    io = Type.coerce_to obj, IO, :to_io
-                    raise IOError, "closed stream" if io.closed?
-                    io
-                  }
+      readables =
+        Type.coerce_to(readables, Array, :to_ary).map do |obj|
+          io = Type.coerce_to obj, IO, :to_io
+          raise IOError, "closed stream" if io.closed?
+          io
+        end
     end
 
     if writables
-      writables = Type.coerce_to(writables, Array, :to_ary).map {|obj|
-                    io = Type.coerce_to obj, IO, :to_io
-                    raise IOError, "closed stream" if io.closed?
-                    io
-                    }
+      writables =
+        Type.coerce_to(writables, Array, :to_ary).map do |obj|
+          io = Type.coerce_to obj, IO, :to_io
+          raise IOError, "closed stream" if io.closed?
+          io
+        end
     end
 
     if errorables
-      errorables = Type.coerce_to(errorables, Array, :to_ary).map {|obj|
-                    io = Type.coerce_to obj, IO, :to_io
-                    raise IOError, "closed stream" if io.closed?
-                    io
-                    }
+      errorables =
+        Type.coerce_to(errorables, Array, :to_ary).map do |obj|
+          io = Type.coerce_to obj, IO, :to_io
+          raise IOError, "closed stream" if io.closed?
+          io
+        end
     end
 
     IO.select_primitive(readables, writables, errorables, timeout)
@@ -526,7 +529,7 @@ class IO
       mode = parse_mode StringValue(mode)
     end
 
-    open_with_mode path, mode, perm
+    FFI::Platform::POSIX.open path, mode, perm
   end
 
   #
@@ -1420,14 +1423,14 @@ class IO
   #
   #  @todo  Improve reading into provided buffer.
   #
-  def sysread(number_of_bytes, buffer = Undefined)
+  def sysread(number_of_bytes, buffer = undefined)
     flush
     raise IOError unless @ibuffer.empty?
 
     str = read_primitive number_of_bytes
     raise EOFError if str.nil?
 
-    unless buffer.equal? Undefined
+    unless buffer.equal? undefined
       buffer.to_str.replace str
     end
 

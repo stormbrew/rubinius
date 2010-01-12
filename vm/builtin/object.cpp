@@ -13,8 +13,6 @@
 #include "builtin/string.hpp"
 #include "builtin/tuple.hpp"
 #include "builtin/array.hpp"
-#include "builtin/selector.hpp"
-#include "builtin/sendsite.hpp"
 #include "builtin/float.hpp"
 #include "builtin/staticscope.hpp"
 #include "builtin/system.hpp"
@@ -26,6 +24,7 @@
 #include "dispatch.hpp"
 #include "lookup_data.hpp"
 #include "primitives.hpp"
+#include "global_cache.hpp"
 
 #include "vm/object_utils.hpp"
 
@@ -268,18 +267,6 @@ namespace rubinius {
   Object* Object::ivar_names(STATE) {
     Array* ary = Array::create(state, 3);
 
-    if(!reference_p()) {
-      LookupTable* tbl = try_as<LookupTable>(G(external_ivars)->fetch(state, this));
-
-      if(tbl) return tbl;
-      return Qnil;
-    }
-
-    // Handle packed objects in a unique way.
-    if(PackedObject* po = try_as<PackedObject>(this)) {
-      po->add_packed_ivars(state, ary);
-    }
-
     // We don't check slots, because we don't advertise them
     // as normal ivars.
     class ivar_match : public ObjectMatcher {
@@ -292,6 +279,19 @@ namespace rubinius {
         return false;
       }
     } match;
+
+    if(!reference_p()) {
+      LookupTable* tbl = try_as<LookupTable>(G(external_ivars)->fetch(state, this));
+      if(tbl) {
+        ary->concat(state, tbl->filtered_keys(state, match));
+      }
+      return ary;
+    }
+
+    // Handle packed objects in a unique way.
+    if(PackedObject* po = try_as<PackedObject>(this)) {
+      po->add_packed_ivars(state, ary);
+    }
 
     if(CompactLookupTable* tbl = try_as<CompactLookupTable>(ivars_)) {
       ary->concat(state, tbl->filtered_keys(state, match));
@@ -407,8 +407,13 @@ namespace rubinius {
 
   Class* Object::metaclass(STATE) {
     if(reference_p()) {
-      if(kind_of<MetaClass>(klass_)) {
-        return as<MetaClass>(klass_);
+      if(MetaClass* mc = try_as<MetaClass>(klass())) {
+        // This test is very important! MetaClasses can get their
+        // klass() hooked up to the MetaClass of a parent class, so
+        // that the MOP works properly. BUT we should not return
+        // that parent metaclass, we need to only return a MetaClass
+        // that is for this!
+        if(mc->attached_instance() == this) return mc;
       }
       return MetaClass::attach(state, this);
     }
@@ -661,7 +666,7 @@ namespace rubinius {
 
     Dispatch dis(name);
 
-    if(!GlobalCacheResolver::resolve(state, name, dis, lookup)) {
+    if(!GlobalCache::resolve(state, name, dis, lookup)) {
       return Qfalse;
     }
 
@@ -684,7 +689,7 @@ namespace rubinius {
 
     Dispatch dis(name);
 
-    if(!GlobalCacheResolver::resolve(state, name, dis, lookup)) {
+    if(!GlobalCache::resolve(state, name, dis, lookup)) {
       return Qfalse;
     }
 

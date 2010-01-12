@@ -121,6 +121,50 @@ extern "C" {
     return dis.send(state, call_frame, lookup, out_args);
   }
 
+  Object* rbx_zsuper_send(STATE, CallFrame* call_frame, Symbol* name, Object* block) {
+    Object* const recv = call_frame->self();
+
+    VariableScope* scope = call_frame->method_scope(state);
+    assert(scope);
+
+    VMMethod* v = scope->method()->backend_method();
+    Object* splat_obj = 0;
+    Array* splat = 0;
+
+    size_t arg_count = v->total_args;
+
+    if(v->splat_position >= 0) {
+      splat_obj = scope->get_local(state, v->splat_position);
+      splat = try_as<Array>(splat_obj);
+      if(splat) {
+        arg_count += splat->size();
+      } else {
+        arg_count++;
+      }
+    }
+
+    Tuple* tup = Tuple::create(state, arg_count);
+    for(int i = 0; i < v->total_args; i++) {
+      tup->put(state, i, scope->get_local(state, i));
+    }
+
+    if(splat) {
+      for(size_t i = 0; i < splat->size(); i++) {
+        tup->put(state, i + v->total_args, splat->get(state, i));
+      }
+    } else if(splat_obj) {
+      tup->put(state, v->total_args, splat_obj);
+    }
+
+    Arguments out_args(recv, block, arg_count, 0);
+    out_args.use_tuple(tup, arg_count);
+
+    LookupData lookup(recv, call_frame->module()->superclass(), true);
+    Dispatch dis(name);
+
+    return dis.send(state, call_frame, lookup, out_args, eSuper);
+  }
+
   Object* rbx_arg_error(STATE, CallFrame* call_frame, Dispatch& msg, Arguments& args,
                         int required) {
     Exception* exc =
@@ -682,7 +726,7 @@ extern "C" {
     return Qnil;
   }
 
-  Object* rbx_pop_exception(STATE, Object* top) {
+  Object* rbx_pop_exception(STATE, CallFrame* call_frame, Object* top) {
     if(top->nil_p()) {
       state->thread_state()->clear_exception();
     } else {
@@ -756,6 +800,36 @@ extern "C" {
     // TODO Don't use as<>, since it will throw a C++ exception
     // into JITd code.
     return as<String>(left)->append(state, as<String>(right));
+  }
+
+  Object* rbx_string_build(STATE, CallFrame* call_frame, int count, Object** parts) {
+    size_t size = 0;
+
+    // Figure out the total size
+    for(int i = 0; i < count; i++) {
+      if(String* str = try_as<String>(parts[i])) {
+        size += str->size();
+      } else {
+        Exception* exc =
+          Exception::make_type_error(state, String::type, parts[i], "not a string");
+        exc->locations(state, System::vm_backtrace(state, Fixnum::from(0), call_frame));
+
+        state->thread_state()->raise_exception(exc);
+        return NULL;
+      }
+    }
+
+    String* str = String::create(state, 0, size);
+    uint8_t* pos = str->byte_address();
+
+    for(int i = 0; i < count; i++) {
+      // We can force here because we've typed check them above.
+      String* sub = force_as<String>(parts[i]);
+      memcpy(pos, sub->byte_address(), sub->size());
+      pos += sub->size();
+    }
+
+    return str;
   }
 
   Object* rbx_raise_return(STATE, CallFrame* call_frame, Object* top) {
@@ -928,6 +1002,10 @@ extern "C" {
 
     *valid = false;
     return 0;
+  }
+
+  Object* rbx_ffi_from_int32(STATE, int32_t ll) {
+    return Integer::from(state, ll);
   }
 
   Object* rbx_ffi_from_int64(STATE, int64_t ll) {
