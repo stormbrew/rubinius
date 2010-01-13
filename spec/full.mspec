@@ -27,5 +27,5 @@ class MSpecScript
     '^spec/ruby/library/net/http',
     '^spec/ruby/library/ping',
     '^spec/ruby/library/syslog',
-  ] + get(:obsolete_library)
+  ] + get(:obsolete_library) + get(:ci_issues)
 end

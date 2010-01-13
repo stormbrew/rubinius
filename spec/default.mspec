@@ -12,9 +12,6 @@ class MSpecScript
     'spec/ruby/core',
     'spec/core',
 
-    # 1.9 syntax (TODO: remove)
-    '^core/proc/parameters_spec.rb',
-
     # 1.8
     '^core/continuation'
   ]
@@ -80,6 +77,24 @@ class MSpecScript
     'spec/ruby/library',
   ] + get(:obsolete_library)
 
+  set :ci_issues, [
+    # 1.9 syntax and method issues (TODO: remove)
+    '^language/array_spec.rb',
+    '^language/block_spec.rb',
+    '^language/case_spec.rb',
+    '^language/literal_spec.rb',
+    '^language/literal_lambda_spec.rb',
+    '^language/method_spec.rb',
+    '^language/symbol_spec.rb',
+    '^language/variables_spec.rb',
+    '^core/basicobject',
+    '^core/method/parameters_spec.rb',
+    '^core/module/name_spec.rb',
+    '^core/numeric/to_c_spec.rb',
+    '^core/proc/parameters_spec.rb',
+    '^library/erb/new_spec.rb'
+  ]
+
   # An ordered list of the directories containing specs to run
   # as the CI process.
   set :ci_files, [
@@ -103,7 +118,7 @@ class MSpecScript
     # These additional directories will be enabled as the
     # specs in them are updated for the C++ VM.
     # 'spec/debugger',
-  ]
+  ] + get(:obsolete_library) + get(:ci_issues)
 
   # The set of substitutions to transform a spec filename
   # into a tag filename.
