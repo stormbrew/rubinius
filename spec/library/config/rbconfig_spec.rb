@@ -65,7 +65,7 @@ describe "Config::CONFIG" do
   entries = {
     "RUBY_SO_NAME"      => "rubinius-#{Rubinius::VERSION}",
     "ruby_install_name" => "rbx",
-    "ruby_version"      => "1.8",
+    "ruby_version"      => "1.9",
   }
 
   it_has_entries 'Config::CONFIG', entries
