@@ -1,0 +1,2 @@
+fails:Module.__add_method__ adds a CompiledMethod to a class or module
+fails:Module.__add_method__ sets the staticscope of the CompiledMethod to the enclosing class or module

@@ -11,7 +11,8 @@ module ModuleSpecs
       :added
     end
 
-    MethodContext.current.__add_method__ :b, cm
+    # TODO: there is no MethodContext
+    # MethodContext.current.__add_method__ :b, cm
   end
 
   class F

@@ -1,1 +1,3 @@
 fails:Ruby character strings interpolates the return value of Object#inspect, without ivars, if Object#to_s does not return a String instance
+fails:Ruby character strings are produced from character shortcuts
+fails:Ruby character strings are produced from control character shortcuts

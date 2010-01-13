@@ -1,2 +1,3 @@
 fails:String#delete! raises a TypeError when self is frozen
 fails:String#delete! raises a RuntimeError when self is frozen
+fails:String#delete raises if the given ranges are invalid

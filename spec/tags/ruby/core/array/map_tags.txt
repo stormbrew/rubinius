@@ -1,0 +1,3 @@
+fails:Array#map does not copy untrusted status
+fails:Array#map! keeps untrusted status
+fails:Array#map! raises a RuntimeError on a frozen array

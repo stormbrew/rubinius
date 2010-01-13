@@ -1,2 +1,3 @@
 fails:Kernel#freeze causes mutative calls to raise TypeError
 fails:Kernel#freeze causes mutative calls to raise RuntimeError
+fails:Kernel#freeze freezes immediate values

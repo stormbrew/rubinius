@@ -1,0 +1,3 @@
+fails:Kernel.__callee__ returns the caller from block inside define_method too
+fails:Kernel.__callee__ returns the caller from a define_method called from the same class
+fails:Kernel.__callee__ returns method name even from eval

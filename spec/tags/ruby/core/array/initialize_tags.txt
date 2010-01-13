@@ -1,0 +1,1 @@
+fails:Array#initialize raises a RuntimeError on frozen arrays

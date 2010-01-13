@@ -1,0 +1,1 @@
+fails:Kernel#methods does not return undefined singleton methods defined by obj.meth

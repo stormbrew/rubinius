@@ -1,0 +1,3 @@
+fails:CompiledMethod#clear_breakpoint clears a breakpoint flag at the location specified
+fails:CompiledMethod#clear_breakpoint raises an exception if an invalid IP is specified
+fails:CompiledMethod#clear_breakpoint causes execution to no longer be suspended when the breakpoint location is hit

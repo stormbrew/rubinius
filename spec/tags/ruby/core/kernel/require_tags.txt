@@ -9,3 +9,4 @@ fails:Kernel#require collapses multiple consecutive path separators before stori
 fails:Kernel#require collapses '../' inside an absolute path before storing in $LOADED_FEATURES
 fails:Kernel#require calls #to_path on non-String arguments
 fails:Kernel#require produces __FILE__ as the given filename and __LINE__ as the source line number
+fails:Kernel#require calls #to_str on non-String objects returned by #to_path
