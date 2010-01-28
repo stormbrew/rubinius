@@ -9,6 +9,7 @@ class Exception
     @locations = nil
     @backtrace = nil
   end
+	alias_method :__initialize__, :initialize
 
   def backtrace
     if @backtrace
@@ -77,7 +78,9 @@ class Exception
   def exception(message=nil)
     if message
       unless message.equal? self
-        return self.class.new(message)
+        e = self.clone
+				e.__initialize__(message)
+				return e
       end
     end
 
