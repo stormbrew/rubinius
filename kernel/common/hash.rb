@@ -446,7 +446,33 @@ class Hash
   private :key_index
 
   def keys
-    map { |key, value| key }
+    k = []
+    capacity = @capacity
+    entries = @entries
+    i = -1
+    while (i += 1) < capacity
+      entry = entries[i]
+      while (entry)
+        k << entry.key
+        entry = entry.next
+      end
+    end
+    k
+  end
+
+  def values
+    v = []
+    capacity = @capacity
+    entries = @entries
+    i = -1
+    while (i += 1) < capacity
+      entry = entries[i]
+      while (entry)
+        v << entry.value
+        entry = entry.next
+      end
+    end
+    v
   end
 
   def merge(other, &block)
@@ -682,10 +708,6 @@ class Hash
     false
   end
   alias_method :has_value?, :value?
-
-  def values
-    map { |key, value| value }
-  end
 
   def values_at(*args)
     args.collect { |key| self[key] }
