@@ -62,6 +62,10 @@ class Hash
 
   attr_reader :size
 
+  attr_reader :entries
+  attr_reader :capacity
+  attr_reader :max_entries
+
   alias_method :length, :size
 
   Entries = Rubinius::Tuple
@@ -619,10 +623,27 @@ class Hash
     other = Type.coerce_to other, Hash, :to_hash
     return self if self.equal? other
 
-    __setup__
+    # Normally this would be a call to __setup__,
+    # but that will create a new unused Tuple
+    # that we would wind up replacing anyways.
+    @entries = other.entries.dup
+    @capacity = other.capacity
+    @mask     = @capacity - 1
+    @max_entries = other.max_entries
+    @size     = 0 # gets updated by new_entry
 
-    other.each_entry do |entry|
-      __store__ entry.key, entry.value
+    # We now contain a list of the other hash's
+    # Entry objects. We need to re-map them to our
+    # own.
+    i = -1
+    while (i += 1) < @capacity
+      if orig = @entries[i]
+        @entries[i] = self_entry = new_entry(orig.key, orig.key_hash, orig.value)
+        while orig = orig.next
+          self_entry.next = new_entry(orig.key, orig.key_hash, orig.value)
+          self_entry = self_entry.next
+        end
+      end
     end
 
     if other.default_proc
